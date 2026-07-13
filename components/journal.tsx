@@ -37,6 +37,11 @@ const fromIso = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
 };
+const parseIso = (value: string | null) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = fromIso(value);
+  return iso(date) === value ? date : null;
+};
 const monthKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 const displayDate = (value: string) =>
@@ -106,7 +111,7 @@ function Calendar({
           aria-label="Previous month"
           onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
         >
-          ←
+          <span aria-hidden="true">←</span>
         </button>
         <strong>
           {new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(month)}
@@ -116,7 +121,7 @@ function Calendar({
           aria-label="Next month"
           onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
         >
-          →
+          <span aria-hidden="true">→</span>
         </button>
       </div>
       <div className="weekdays" aria-hidden="true">
@@ -160,6 +165,7 @@ export default function Journal() {
   const [showSettings, setShowSettings] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [dark, setDark] = useState(false);
+  const [themeReady, setThemeReady] = useState(false);
   const [online, setOnline] = useState(true);
   const [loading, setLoading] = useState(true);
   const [remoteUpdate, setRemoteUpdate] = useState<Entry | null>(null);
@@ -294,14 +300,32 @@ export default function Journal() {
   useEffect(() => {
     const savedTheme = localStorage.getItem("paralog-theme");
     setDark(savedTheme === "dark" || (!savedTheme && matchMedia("(prefers-color-scheme: dark)").matches));
+    setThemeReady(true);
     setOnline(navigator.onLine);
     fetch("/api/settings").then((response) => response.ok ? response.json() : null).then(setSettings).catch(() => undefined);
   }, []);
 
   useEffect(() => {
+    if (!themeReady) return;
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("paralog-theme", dark ? "dark" : "light");
-  }, [dark]);
+  }, [dark, themeReady]);
+
+  useEffect(() => {
+    if (!showCalendar && !showSettings) return;
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setShowCalendar(false);
+      setShowSettings(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showCalendar, showSettings]);
 
   useEffect(() => {
     if (!("BroadcastChannel" in window)) return;
@@ -347,16 +371,18 @@ export default function Journal() {
   useEffect(() => {
     const dateFromUrl = () => new URLSearchParams(window.location.search).get("date");
     const initial = dateFromUrl();
-    if (initial && /^\d{4}-\d{2}-\d{2}$/.test(initial)) {
-      setSelected(initial);
-      setMonth(new Date(fromIso(initial).getFullYear(), fromIso(initial).getMonth(), 1));
+    if (parseIso(initial)) {
+      setSelected(initial!);
+      setMonth(new Date(fromIso(initial!).getFullYear(), fromIso(initial!).getMonth(), 1));
     } else window.history.replaceState({ date: today }, "", `?date=${today}`);
 
     const onPopState = () => {
       const date = dateFromUrl();
-      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-      setSelected(date);
-      setMonth(new Date(fromIso(date).getFullYear(), fromIso(date).getMonth(), 1));
+      const parsed = parseIso(date);
+      const next = parsed ? date! : today;
+      if (!parsed) window.history.replaceState({ date: today }, "", `?date=${today}`);
+      setSelected(next);
+      setMonth(new Date(fromIso(next).getFullYear(), fromIso(next).getMonth(), 1));
       setView("rich");
       setShowCalendar(false);
     };
@@ -388,7 +414,12 @@ export default function Journal() {
 
   function choose(date: string, updateHistory = true) {
     if (dirty) persistEntry(selected, entry.content, entry);
-    if (date === selected) { setShowCalendar(false); return; }
+    if (date === selected) {
+      const current = fromIso(date);
+      setMonth(new Date(current.getFullYear(), current.getMonth(), 1));
+      setShowCalendar(false);
+      return;
+    }
     setSelected(date);
     setMonth(new Date(fromIso(date).getFullYear(), fromIso(date).getMonth(), 1));
     setView("rich");
@@ -465,12 +496,12 @@ export default function Journal() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand"><p className="eyebrow">PRIVATE JOURNAL</p><h1>Paralog</h1></div>
-        <button className="today-button" type="button" onClick={() => choose(today)}><span>Today</span><b>↗</b></button>
+        <button className="today-button" type="button" onClick={() => choose(today)}><span>Today</span><b aria-hidden="true">↗</b></button>
         <Calendar month={month} selected={selected} savedDates={savedDates} onMonthChange={setMonth} onSelect={choose} />
         <div className="side-actions">
-          <button type="button" onClick={() => setDark(!dark)}>{dark ? "☀" : "◐"}<span>{dark ? "Light mode" : "Dark mode"}</span></button>
-          <button type="button" onClick={() => setShowSettings(true)}>⚙<span>Settings</span></button>
-          <button type="button" onClick={signOut}>↪<span>Sign out</span></button>
+          <button type="button" onClick={() => setDark(!dark)}><span className="action-icon" aria-hidden="true">{dark ? "☀" : "◐"}</span><span className="action-label">{dark ? "Light mode" : "Dark mode"}</span></button>
+          <button type="button" onClick={() => setShowSettings(true)}><span className="action-icon" aria-hidden="true">⚙</span><span className="action-label">Settings</span></button>
+          <button type="button" onClick={signOut}><span className="action-icon" aria-hidden="true">↪</span><span className="action-label">Sign out</span></button>
         </div>
       </aside>
 
@@ -478,9 +509,9 @@ export default function Journal() {
         <button className="mobile-brand" type="button" onClick={() => choose(today)}>Paralog</button>
         <div>
           <button type="button" onClick={() => choose(today)} aria-label="Go to today">Today</button>
-          <button type="button" onClick={() => setShowCalendar(true)} aria-label="Open calendar">⌗</button>
-          <button type="button" onClick={() => setDark(!dark)} aria-label={dark ? "Use light mode" : "Use dark mode"}>{dark ? "☀" : "◐"}</button>
-          <button type="button" onClick={() => setShowSettings(true)} aria-label="Open settings">⚙</button>
+          <button type="button" onClick={() => setShowCalendar(true)} aria-label="Open calendar"><span aria-hidden="true">▦</span></button>
+          <button type="button" onClick={() => setDark(!dark)} aria-label={dark ? "Use light mode" : "Use dark mode"}><span aria-hidden="true">{dark ? "☀" : "◐"}</span></button>
+          <button type="button" onClick={() => setShowSettings(true)} aria-label="Open settings"><span aria-hidden="true">⚙</span></button>
         </div>
       </nav>
 
@@ -493,9 +524,9 @@ export default function Journal() {
         </section>}
         <header className="entry-header">
           <div className="date-navigation">
-            <button type="button" onClick={() => moveDay(-1)} aria-label="Previous day">←</button>
+            <button type="button" onClick={() => moveDay(-1)} aria-label="Previous day"><span aria-hidden="true">←</span></button>
             <div><p className="eyebrow">JOURNAL ENTRY</p><h2>{displayDate(selected)}</h2></div>
-            <button type="button" onClick={() => moveDay(1)} aria-label="Next day">→</button>
+            <button type="button" onClick={() => moveDay(1)} aria-label="Next day"><span aria-hidden="true">→</span></button>
           </div>
           <div className="header-actions">
             <span className={`save-status ${saveState}`} aria-live="polite"><i />{statusCopy[saveState]}</span>

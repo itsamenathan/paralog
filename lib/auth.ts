@@ -11,5 +11,5 @@ export function passwordMatches(password: string) {
   const hashed = (value: string) => crypto.createHash("sha256").update(value).digest();
   return crypto.timingSafeEqual(hashed(password), hashed(process.env.PARALOG_PASSWORD!));
 }
-export async function signIn() { (await cookies()).set(name, token(), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 30, path: "/" }); }
+export async function signIn(secure: boolean) { (await cookies()).set(name, token(), { httpOnly: true, sameSite: "lax", secure, maxAge: 60 * 60 * 24 * 30, path: "/" }); }
 export async function signOut() { (await cookies()).delete(name); }

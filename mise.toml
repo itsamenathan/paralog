@@ -1,0 +1,31 @@
+[tools]
+node = "26.5.0"
+
+[tasks.install]
+description = "Install locked npm dependencies"
+run = "npm ci"
+
+[tasks.dev]
+description = "Start the Next.js development server"
+run = "npm run dev"
+
+[tasks.build]
+description = "Create a production build"
+run = "npm run build"
+
+[tasks.start]
+description = "Serve the production build"
+run = "npm run start"
+
+[tasks."test:start"]
+description = "Build and start an isolated local test server"
+depends = ["build"]
+run = "node scripts/test-server.mjs start"
+
+[tasks."test:status"]
+description = "Show the local test server status"
+run = "node scripts/test-server.mjs status"
+
+[tasks."test:stop"]
+description = "Stop the local test server"
+run = "node scripts/test-server.mjs stop"

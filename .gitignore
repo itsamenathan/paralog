@@ -24,6 +24,8 @@ data/
 
 # Test and tooling output
 coverage/
+.test-data/
+.paralog-test-server.json
 *.tsbuildinfo
 *.log
 npm-debug.log*

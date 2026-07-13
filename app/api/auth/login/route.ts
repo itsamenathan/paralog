@@ -5,6 +5,8 @@ export async function POST(request: NextRequest) {
   if (!passwordConfigured()) return NextResponse.json({ error: "Set PARALOG_PASSWORD before using Paralog." }, { status: 503 });
   const { password } = await request.json();
   if (typeof password !== "string" || !passwordMatches(password)) return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
-  await signIn();
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0].trim();
+  const secure = forwardedProtocol ? forwardedProtocol === "https" : request.nextUrl.protocol === "https:";
+  await signIn(secure);
   return NextResponse.json({ ok: true });
 }
