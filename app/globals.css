@@ -157,21 +157,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   font-size: 12px;
 }
 .offline-banner span { margin-right: 8px; color: var(--warning); font-weight: 700; }
-.sync-toast {
-  position: fixed;
-  top: 18px;
-  left: 50%;
-  z-index: 80;
-  padding: 9px 13px;
-  border: 1px solid color-mix(in srgb, var(--success) 45%, transparent);
-  border-radius: 999px;
-  background: var(--surface-raised);
-  color: var(--success);
-  box-shadow: var(--shadow);
-  font-size: 11px;
-  font-weight: 700;
-  transform: translateX(-50%);
-}
 .sync-conflict {
   margin-bottom: 20px;
   padding: 14px 15px;
@@ -413,7 +398,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .mobile-bar > div button:hover { background: var(--accent-soft); color: var(--ink); }
   .journal-page { width: 100%; padding: 25px 17px calc(72px + env(safe-area-inset-bottom)); }
   .offline-banner { margin: -5px 0 18px; }
-  .sync-toast { top: calc(65px + env(safe-area-inset-top)); max-width: calc(100% - 32px); white-space: nowrap; }
   .sync-conflict { margin-top: -5px; align-items: stretch; flex-direction: column; gap: 12px; }
   .sync-conflict > div:last-child { justify-content: flex-end; }
   .entry-header { gap: 18px; padding-bottom: 20px; }

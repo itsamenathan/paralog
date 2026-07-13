@@ -63,6 +63,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (url.pathname === "/api/entries/events") {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   if (url.pathname.startsWith("/api/entries") || url.pathname.startsWith("/api/calendar") || url.pathname.startsWith("/api/settings") || url.pathname.startsWith("/api/files")) {
     event.respondWith(networkFirst(request));
     return;

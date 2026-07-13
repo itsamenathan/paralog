@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getEntry, saveEntry } from "@/lib/journal";
 import { isAuthenticated } from "@/lib/auth";
+import { publishEntryChange } from "@/lib/entry-events";
 
 export const runtime = "nodejs";
 
@@ -22,5 +23,7 @@ export async function PUT(request: NextRequest) {
   if (!date) return NextResponse.json({ error: "A valid date is required." }, { status: 400 });
   const body = await request.json();
   if (typeof body.content !== "string") return NextResponse.json({ error: "Content must be text." }, { status: 400 });
-  return NextResponse.json(saveEntry(date, body.content));
+  const result = saveEntry(date, body.content);
+  publishEntryChange(date);
+  return NextResponse.json(result);
 }

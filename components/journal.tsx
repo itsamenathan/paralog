@@ -169,13 +169,11 @@ export default function Journal() {
   const [online, setOnline] = useState(true);
   const [loading, setLoading] = useState(true);
   const [remoteUpdate, setRemoteUpdate] = useState<Entry | null>(null);
-  const [syncMessage, setSyncMessage] = useState("");
   const selectedRef = useRef(selected);
   const entryRef = useRef(entry);
   const dirtyRef = useRef(dirty);
   const saveStateRef = useRef(saveState);
   const serverContentRef = useRef<string | null>(null);
-  const channelRef = useRef<BroadcastChannel | null>(null);
   selectedRef.current = selected;
   entryRef.current = entry;
   dirtyRef.current = dirty;
@@ -191,7 +189,6 @@ export default function Journal() {
     cacheEntry(date, remote, false);
     setEntry(remote);
     setSaveState("saved");
-    setSyncMessage("Updated from another session");
   }, []);
 
   const refreshRemote = useCallback(async (date: string) => {
@@ -246,7 +243,6 @@ export default function Journal() {
         setDirty(false);
         setRemoteUpdate(null);
       }
-      channelRef.current?.postMessage({ type: "entry-saved", date });
       return true;
     } catch {
       if (date === selected) setSaveState("offline");
@@ -328,22 +324,10 @@ export default function Journal() {
   }, [showCalendar, showSettings]);
 
   useEffect(() => {
-    if (!("BroadcastChannel" in window)) return;
-    const channel = new BroadcastChannel("paralog-entry-sync");
-    channelRef.current = channel;
-    channel.onmessage = (event) => {
-      if (event.data?.type === "entry-saved" && event.data.date === selectedRef.current) {
-        refreshRemote(event.data.date);
-      }
-    };
-    return () => { channel.close(); channelRef.current = null; };
-  }, [refreshRemote]);
-
-  useEffect(() => {
     const refresh = () => {
       if (document.visibilityState === "visible") refreshRemote(selected);
     };
-    const interval = window.setInterval(refresh, 3500);
+    const interval = window.setInterval(refresh, 30_000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
@@ -354,10 +338,19 @@ export default function Journal() {
   }, [refreshRemote, selected]);
 
   useEffect(() => {
-    if (!syncMessage) return;
-    const timeout = window.setTimeout(() => setSyncMessage(""), 2600);
-    return () => window.clearTimeout(timeout);
-  }, [syncMessage]);
+    if (!online) return;
+    const events = new EventSource("/api/entries/events");
+    events.onopen = () => refreshRemote(selectedRef.current);
+    events.onmessage = (event) => {
+      try {
+        const change = JSON.parse(event.data) as { date?: string };
+        if (change.date === selectedRef.current) refreshRemote(change.date);
+      } catch {
+        // Ignore malformed events and let EventSource reconnect normally.
+      }
+    };
+    return () => events.close();
+  }, [online, refreshRemote]);
 
   useEffect(() => {
     const handleOnline = () => { setOnline(true); syncPending(); };
@@ -471,7 +464,6 @@ export default function Journal() {
     setDirty(false);
     setSaveState("saved");
     setRemoteUpdate(null);
-    setSyncMessage("Loaded the newer version");
   }
 
   function keepLocalUpdate() {
@@ -517,7 +509,6 @@ export default function Journal() {
 
       <section className="journal-page">
         {!online && <div className="offline-banner"><span>Offline</span> Keep writing — changes will sync when you reconnect.</div>}
-        {syncMessage && <div className="sync-toast" role="status">✓ {syncMessage}</div>}
         {remoteUpdate && <section className="sync-conflict" role="alert">
           <div><strong>This entry changed somewhere else.</strong><span>Choose which version to keep before continuing.</span></div>
           <div><button type="button" className="text-button" onClick={keepLocalUpdate}>Keep mine</button><button type="button" className="save-button" onClick={acceptRemoteUpdate}>Load newer version</button></div>
