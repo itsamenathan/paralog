@@ -1,0 +1,12 @@
+services:
+  paralog:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PARALOG_DATA_DIR: /data
+      PARALOG_PASSWORD: ${PARALOG_PASSWORD:?Set PARALOG_PASSWORD in your environment or .env file}
+      PARALOG_AUTH_SECRET: ${PARALOG_AUTH_SECRET:-change-this-to-a-long-random-secret}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
