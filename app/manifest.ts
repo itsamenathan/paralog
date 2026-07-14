@@ -6,6 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Paralog",
     description: "A quiet, private Markdown journal.",
     start_url: "/",
+    id: "/",
     scope: "/",
     display: "standalone",
     orientation: "any",

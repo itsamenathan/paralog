@@ -447,7 +447,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .settings-title > button, .sheet-header > button { width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: var(--paper); color: var(--muted); font-size: 22px; }
 .settings label, .login-page label { display: grid; gap: 7px; font-size: 12px; font-weight: 700; }
 .settings small { color: var(--muted); font-weight: 450; line-height: 1.45; }
-.settings input, .settings textarea, .login-page input { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.settings input, .settings textarea, .settings select, .login-page input { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .settings textarea { min-height: 160px; resize: vertical; }
 .settings .toggle-setting { grid-template-columns: auto 1fr; align-items: start; gap: 11px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); cursor: pointer; }
 .settings .toggle-setting input { width: 17px; height: 17px; margin: 1px 0 0; accent-color: var(--button); }
@@ -455,6 +455,34 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .settings .toggle-setting b { font-size: 12px; }
 .settings-actions { display: flex; align-items: center; justify-content: space-between; }
 .text-button { border: 0; background: transparent; color: var(--muted); }
+.notification-settings { display: grid; gap: 13px; padding-top: 20px; border-top: 1px solid var(--line); }
+.notification-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.notification-heading h3 { margin: 3px 0 0; font-size: 20px; }
+.notification-state { padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--paper); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.notification-state.active { border-color: color-mix(in srgb, var(--success) 45%, var(--line)); color: var(--success); }
+.notification-help, .notification-message { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.notification-help b { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+.notification-message { color: var(--accent); }
+.notification-device-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.notification-device-actions button, .add-reminder, .reminder-remove { min-height: 34px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--ink); font-size: 10px; font-weight: 700; }
+.notification-device-actions .notification-enable { border-color: var(--button); background: var(--button); color: var(--button-ink); }
+.notification-device-actions button:disabled, .add-reminder:disabled { opacity: .5; cursor: not-allowed; }
+.reminder-list { display: grid; gap: 11px; }
+.reminder-card { display: grid; gap: 13px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.reminder-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.settings .reminder-card-heading .toggle-setting { flex: 1; padding: 0; border: 0; background: transparent; }
+.reminder-remove { min-height: 30px; border: 0; color: var(--danger); background: transparent; }
+.reminder-row { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(0, 1.3fr); gap: 10px; }
+.reminder-card fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.reminder-card legend { margin-bottom: 7px; font-size: 12px; font-weight: 700; }
+.weekday-picker { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.settings .weekday-picker label { display: block; }
+.weekday-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.weekday-picker span { min-height: 31px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: var(--paper); font-size: 9px; cursor: pointer; }
+.weekday-picker input:checked + span { border-color: var(--button); color: var(--button-ink); background: var(--button); }
+.weekday-picker input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.settings textarea.reminder-message-input { min-height: 76px; }
+.add-reminder { justify-self: start; }
 .revisions-panel { width: min(680px, 100%); max-height: calc(100dvh - 40px); display: grid; gap: 18px; padding: 25px; overflow-y: auto; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-raised); box-shadow: var(--shadow); }
 .panel-empty { margin: 12px 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .revision-list { display: grid; gap: 9px; }
@@ -617,6 +645,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .calendar-sheet .tag-browser { max-width: 380px; margin: 20px auto 0; }
   .modal-backdrop { align-items: end; padding: 0; }
   .settings, .revisions-panel { width: 100%; max-height: 88dvh; padding: 22px 18px calc(22px + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 20px 20px 0 0; }
+  .reminder-row { grid-template-columns: 1fr; }
   .revision-list article { grid-template-columns: minmax(0, 1fr); }
   .revision-list button { grid-column: 1; grid-row: 2; justify-self: start; }
   .revision-list details { grid-column: 1; grid-row: 3; }

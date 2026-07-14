@@ -8,6 +8,8 @@ Open sessions stay synchronized without a refresh. Paralog broadcasts saves inst
 
 Paralog is also an installable PWA. Once opened online, the app shell, visited entries, and calendar data remain available without a connection. Offline edits are stored locally immediately and sync back to the Markdown filesystem after reconnecting.
 
+Paralog can also send Web Push journal reminders while the app is closed. In Settings, enable notifications separately on each device, then configure up to ten schedules with their own time, weekdays, message, and option to skip days whose entry already has content. Schedules follow the timezone of the last authenticated device to open the app. Push requires HTTPS outside localhost; on iPhone and iPad, install Paralog on the Home Screen before enabling notifications.
+
 ## Run locally
 
 ```bash
@@ -25,6 +27,8 @@ docker compose up --build -d
 ```
 
 The `./data` directory is mounted into the container at `/data`, holding both `journal.db`, uploads, settings, and Markdown entries. Back up this directory to back up Paralog. Set `PARALOG_PASSWORD` and a long random `PARALOG_AUTH_SECRET` in a `.env` file before launching Docker.
+
+Notification signing keys are generated automatically and retained in `journal.db`. Optionally set `PARALOG_VAPID_SUBJECT` to a `mailto:` address you monitor; it defaults to `mailto:paralog@localhost`.
 
 Entries are written as `YYYY/MM-MMMM/YYYY-MM-DD-dddd.md`, for example `2026/07-July/2026-07-11-Saturday.md`.
 

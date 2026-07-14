@@ -1,5 +1,5 @@
-const SHELL_CACHE = "paralog-shell-v2";
-const RUNTIME_CACHE = "paralog-runtime-v2";
+const SHELL_CACHE = "paralog-shell-v3";
+const RUNTIME_CACHE = "paralog-runtime-v3";
 const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -17,6 +17,35 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data?.type === "CLEAR_PRIVATE") event.waitUntil(caches.delete(RUNTIME_CACHE));
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try { payload = event.data?.json() || {}; } catch { /* Fall back to a generic reminder. */ }
+  const title = typeof payload.title === "string" ? payload.title : "Time to journal";
+  const body = typeof payload.body === "string" ? payload.body : "Add a thought to today’s entry.";
+  const url = typeof payload.url === "string" && payload.url.startsWith("/") ? payload.url : "/";
+  const tag = typeof payload.tag === "string" ? payload.tag : "paralog-reminder";
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag,
+    renotify: false,
+    data: { url },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+    for (const client of clients) {
+      if ("navigate" in client) await client.navigate(url);
+      if ("focus" in client) return client.focus();
+    }
+    return self.clients.openWindow(url);
+  }));
 });
 
 async function networkFirst(request, fallback) {
