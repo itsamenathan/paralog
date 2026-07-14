@@ -47,6 +47,19 @@ class BulletWidget extends WidgetType {
 function liveDecorations(view: EditorView): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+  const fencedLines = new Set<number>();
+  let fence: { character: string; length: number } | null = null;
+  for (let lineNumber = 1; lineNumber <= view.state.doc.lines; lineNumber += 1) {
+    const line = view.state.doc.line(lineNumber);
+    const marker = line.text.match(/^\s*(`{3,}|~{3,})/)?.[1];
+    if (fence) {
+      fencedLines.add(lineNumber);
+      if (marker?.[0] === fence.character && marker.length >= fence.length) fence = null;
+    } else if (marker) {
+      fence = { character: marker[0], length: marker.length };
+      fencedLines.add(lineNumber);
+    }
+  }
   const addMark = (from: number, to: number, className: string) => {
     if (to > from) decorations.push(Decoration.mark({ class: className }).range(from, to));
   };
@@ -60,6 +73,13 @@ function liveDecorations(view: EditorView): DecorationSet {
       const line = view.state.doc.lineAt(position);
       const text = line.text;
       const active = line.number === activeLine;
+
+      if (fencedLines.has(line.number)) {
+        decorations.push(Decoration.line({ class: "cm-live-codeblock" }).range(line.from));
+        if (line.to >= to) break;
+        position = line.to + 1;
+        continue;
+      }
 
       const heading = text.match(/^(#{1,6})\s+/);
       if (heading) {
@@ -129,6 +149,22 @@ function liveDecorations(view: EditorView): DecorationSet {
         if (!active) { hide(start, start + 1); hide(start + 1 + match[1].length, start + match[0].length); }
       }
 
+      if (!active) {
+        const protectedRanges = [...text.matchAll(/`[^`\n]*`|!?\[[^\]]*\]\([^)]+\)|https?:\/\/\S+/g)]
+          .map((match) => [match.index ?? 0, (match.index ?? 0) + match[0].length]);
+        const hashtags = /(^|[\s([{"'.,!?;:>])#([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu;
+        for (const match of text.matchAll(hashtags)) {
+          const start = (match.index ?? 0) + match[1].length;
+          const end = start + match[2].length + 1;
+          if (protectedRanges.some(([from, to]) => start < to && end > from)) continue;
+          decorations.push(Decoration.mark({
+            tagName: "a",
+            class: "cm-live-tag",
+            attributes: { href: `/tags/${encodeURIComponent(match[2].normalize("NFC").toLocaleLowerCase())}` },
+          }).range(line.from + start, line.from + end));
+        }
+      }
+
       if (line.to >= to) break;
       position = line.to + 1;
     }
@@ -147,6 +183,17 @@ const livePreview: Extension = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
+const hashtagNavigation = EditorView.domEventHandlers({
+  mousedown(event) {
+    if (event.button !== 0) return false;
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>("a.cm-live-tag");
+    if (!link) return false;
+    event.preventDefault();
+    window.location.assign(link.href);
+    return true;
+  },
+});
+
 export default function LiveMarkdownEditor({ markdown: value, onChange }: { markdown: string; onChange: (markdown: string) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
@@ -164,6 +211,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange }: { mark
         EditorView.lineWrapping,
         placeholder("What’s on your mind?"),
         livePreview,
+        hashtagNavigation,
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !externalUpdate.current) onChangeRef.current(update.state.doc.toString());
         }),

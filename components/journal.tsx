@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { remarkHashtags } from "@/lib/remark-hashtags";
 
 const LiveMarkdownEditor = dynamic(() => import("./live-markdown-editor"), {
   ssr: false,
@@ -17,7 +18,8 @@ type Entry = {
   memories: Memory[];
   template: string;
 };
-type Settings = { saveFormat: string; template: string };
+type Settings = { saveFormat: string; template: string; showTagCloud: boolean };
+type TagSummary = { name: string; count: number; dates: string[] };
 type SaveState = "saved" | "saving" | "unsaved" | "offline";
 type CachedEntry = Entry & { pending: boolean; updatedAt: string };
 
@@ -152,6 +154,23 @@ function Calendar({
   );
 }
 
+function TagBrowser({ tags }: {
+  tags: TagSummary[];
+}) {
+  const largest = Math.max(...tags.map((tag) => tag.count), 1);
+  return <section className="tag-browser" aria-label="Journal tags">
+    <div className="tag-heading"><p className="eyebrow">TAGS</p></div>
+    <div className="tag-cloud">
+      {tags.map((tag) => <a
+        href={`/tags/${encodeURIComponent(tag.name.normalize("NFC").toLocaleLowerCase())}`}
+        key={tag.name}
+        style={{ "--tag-weight": String(tag.count / largest) } as React.CSSProperties}
+        aria-label={`#${tag.name}, ${tag.count} ${tag.count === 1 ? "entry" : "entries"}`}
+      >#{tag.name}</a>)}
+    </div>
+  </section>;
+}
+
 export default function Journal() {
   const today = useMemo(() => iso(new Date()), []);
   const [selected, setSelected] = useState(today);
@@ -162,6 +181,7 @@ export default function Journal() {
   const [dirty, setDirty] = useState(false);
   const [view, setView] = useState<"rich" | "source" | "preview">("rich");
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [tags, setTags] = useState<TagSummary[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [dark, setDark] = useState(false);
@@ -201,6 +221,15 @@ export default function Journal() {
       // Regular offline handling owns the connection state.
     }
   }, [applyRemoteEntry]);
+
+  const loadTags = useCallback(async () => {
+    try {
+      const response = await fetch("/api/tags", { cache: "no-store" });
+      if (response.ok) setTags((await response.json()).tags);
+    } catch {
+      // Keep the last cloud available when offline.
+    }
+  }, []);
 
   const loadMonth = useCallback(async (date: Date) => {
     const key = monthKey(date);
@@ -299,7 +328,8 @@ export default function Journal() {
     setThemeReady(true);
     setOnline(navigator.onLine);
     fetch("/api/settings").then((response) => response.ok ? response.json() : null).then(setSettings).catch(() => undefined);
-  }, []);
+    loadTags();
+  }, [loadTags]);
 
   useEffect(() => {
     if (!themeReady) return;
@@ -325,7 +355,7 @@ export default function Journal() {
 
   useEffect(() => {
     const refresh = () => {
-      if (document.visibilityState === "visible") refreshRemote(selected);
+      if (document.visibilityState === "visible") { refreshRemote(selected); loadTags(); }
     };
     const interval = window.setInterval(refresh, 30_000);
     window.addEventListener("focus", refresh);
@@ -335,7 +365,7 @@ export default function Journal() {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [refreshRemote, selected]);
+  }, [loadTags, refreshRemote, selected]);
 
   useEffect(() => {
     if (!online) return;
@@ -344,13 +374,14 @@ export default function Journal() {
     events.onmessage = (event) => {
       try {
         const change = JSON.parse(event.data) as { date?: string };
+        loadTags();
         if (change.date === selectedRef.current) refreshRemote(change.date);
       } catch {
         // Ignore malformed events and let EventSource reconnect normally.
       }
     };
     return () => events.close();
-  }, [online, refreshRemote]);
+  }, [loadTags, online, refreshRemote]);
 
   useEffect(() => {
     const handleOnline = () => { setOnline(true); syncPending(); };
@@ -481,7 +512,7 @@ export default function Journal() {
     <textarea className="source-editor" value={entry.content} onChange={(event) => changeContent(event.target.value)} placeholder="What’s on your mind?" autoFocus />
   );
   const rendered = (
-    <article className="preview"><ReactMarkdown>{entry.content || "*Nothing here yet.*"}</ReactMarkdown></article>
+    <article className="preview"><ReactMarkdown remarkPlugins={[remarkHashtags]}>{entry.content || "*Nothing here yet.*"}</ReactMarkdown></article>
   );
 
   return (
@@ -490,6 +521,7 @@ export default function Journal() {
         <div className="brand"><p className="eyebrow">PRIVATE JOURNAL</p><h1>Paralog</h1></div>
         <button className="today-button" type="button" onClick={() => choose(today)}><span>Today</span><b aria-hidden="true">↗</b></button>
         <Calendar month={month} selected={selected} savedDates={savedDates} onMonthChange={setMonth} onSelect={choose} />
+        {settings?.showTagCloud && tags.length > 0 && <TagBrowser tags={tags} />}
         <div className="side-actions">
           <button type="button" onClick={() => setDark(!dark)}><span className="action-icon" aria-hidden="true">{dark ? "☀" : "◐"}</span><span className="action-label">{dark ? "Light mode" : "Dark mode"}</span></button>
           <button type="button" onClick={() => setShowSettings(true)}><span className="action-icon" aria-hidden="true">⚙</span><span className="action-label">Settings</span></button>
@@ -562,6 +594,7 @@ export default function Journal() {
           <section className="calendar-sheet" role="dialog" aria-modal="true" aria-label="Choose a journal date" onClick={(event) => event.stopPropagation()}>
             <div className="sheet-header"><div><p className="eyebrow">BROWSE JOURNAL</p><h3>Choose a day</h3></div><button type="button" onClick={() => setShowCalendar(false)} aria-label="Close calendar">×</button></div>
             <Calendar month={month} selected={selected} savedDates={savedDates} onMonthChange={setMonth} onSelect={choose} />
+            {settings?.showTagCloud && tags.length > 0 && <TagBrowser tags={tags} />}
           </section>
         </div>
       )}
@@ -572,6 +605,7 @@ export default function Journal() {
             <div className="settings-title"><div><p className="eyebrow">PREFERENCES</p><h2 id="settings-title">Journal settings</h2></div><button type="button" onClick={() => setShowSettings(false)} aria-label="Close settings">×</button></div>
             <label>Save format<small>Tokens: YYYY, MM, MMMM, DD, dddd. Existing files stay where they are.</small><input value={settings.saveFormat} onChange={(event) => setSettings({ ...settings, saveFormat: event.target.value })} /></label>
             <label>New entry template<small>Use any Markdown you want as a starting point.</small><textarea value={settings.template} onChange={(event) => setSettings({ ...settings, template: event.target.value })} /></label>
+            <label className="toggle-setting"><input type="checkbox" checked={settings.showTagCloud} onChange={(event) => setSettings({ ...settings, showTagCloud: event.target.checked })} /><span><b>Show tag cloud</b><small>Collect hashtags from your entries in the desktop sidebar and mobile calendar.</small></span></label>
             <div className="settings-actions"><button className="text-button" type="button" onClick={signOut}>Sign out</button><button className="save-button" type="button" onClick={persistSettings} disabled={!online}>Save settings</button></div>
           </section>
         </div>

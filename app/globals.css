@@ -127,6 +127,21 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .calendar-note { margin: 2px 0 0; color: var(--muted); font-size: 10px; }
 .calendar-note i { display: inline-block; width: 5px; height: 5px; margin: 0 6px 1px 1px; border-radius: 50%; background: var(--accent); }
 
+.tag-browser { display: grid; gap: 10px; padding-top: 18px; border-top: 1px solid var(--line); }
+.tag-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tag-heading .eyebrow { margin: 0; }
+.tag-cloud { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 8px; }
+.tag-cloud a {
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: calc(10px + (var(--tag-weight) * 5px));
+  line-height: 1.2;
+  text-decoration: none;
+}
+.tag-cloud a:hover { background: var(--accent-soft); color: var(--accent); }
+
 .side-actions { margin-top: auto; display: grid; gap: 4px; }
 .side-actions button {
   display: flex;
@@ -270,6 +285,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .preview code { padding: 2px 5px; border-radius: 4px; background: var(--surface); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .preview pre { padding: 16px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .preview blockquote { margin-left: 0; padding-left: 18px; border-left: 3px solid var(--accent); color: var(--muted); }
+.preview a { color: var(--button); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .preview img { max-width: 100%; height: auto; border-radius: 10px; }
 .template-button { margin-top: 18px; border: 1px dashed var(--line-strong); background: transparent; color: var(--accent); }
 .editor-loading { min-height: 58vh; padding: 32px 12px; color: var(--muted); font: 17px "Iowan Old Style", Georgia, serif; }
@@ -326,7 +342,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .live-editor-host .cm-live-italic { font-style: italic; }
 .live-editor-host .cm-live-strike { text-decoration: line-through; color: var(--muted); }
 .live-editor-host .cm-live-code { padding: 1px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--accent); font: .83em ui-monospace, SFMono-Regular, Menlo, monospace; }
+.live-editor-host .cm-live-codeblock { padding-inline: 12px; background: var(--surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; }
 .live-editor-host .cm-live-link { color: var(--button); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.live-editor-host .cm-live-tag { color: var(--accent); text-decoration: none; font-weight: 650; }
+.live-editor-host .cm-live-tag:hover { text-decoration: underline; text-underline-offset: 3px; }
 .live-editor-host .cm-live-heading { font-weight: 700; line-height: 1.25; }
 .live-editor-host .cm-live-h1 { font-size: 2em; letter-spacing: -.035em; }
 .live-editor-host .cm-live-h2 { font-size: 1.55em; letter-spacing: -.025em; }
@@ -347,10 +366,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .settings small { color: var(--muted); font-weight: 450; line-height: 1.45; }
 .settings input, .settings textarea, .login-page input { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .settings textarea { min-height: 160px; resize: vertical; }
+.settings .toggle-setting { grid-template-columns: auto 1fr; align-items: start; gap: 11px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); cursor: pointer; }
+.settings .toggle-setting input { width: 17px; height: 17px; margin: 1px 0 0; accent-color: var(--button); }
+.settings .toggle-setting span { display: grid; gap: 4px; }
+.settings .toggle-setting b { font-size: 12px; }
 .settings-actions { display: flex; align-items: center; justify-content: space-between; }
 .text-button { border: 0; background: transparent; color: var(--muted); }
 
-.calendar-sheet { width: min(410px, 100%); padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-raised); box-shadow: var(--shadow); }
+.calendar-sheet { width: min(410px, 100%); max-height: calc(100dvh - 40px); padding: 22px; overflow-y: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-raised); box-shadow: var(--shadow); }
 .sheet-header { margin-bottom: 22px; }
 .sheet-header h3 { margin: 0; font-size: 25px; }
 .calendar-sheet .days button { width: 38px; height: 38px; font-size: 13px; }
@@ -362,6 +385,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .setup-message, .error { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .error { color: var(--accent); }
 .setup-message code { padding: 2px 4px; border-radius: 4px; background: var(--paper); }
+
+.tag-page { width: min(900px, 100%); min-height: 100dvh; margin: 0 auto; padding: 56px clamp(22px, 6vw, 72px) 80px; }
+.tag-page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; padding-bottom: 26px; border-bottom: 1px solid var(--line); }
+.tag-page-header h1 { margin: 0; color: var(--accent); font: 600 clamp(38px, 6vw, 58px)/1 "Iowan Old Style", Georgia, serif; letter-spacing: -.045em; }
+.tag-page-header p:last-child { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+.tag-page-header > a { min-height: 39px; display: inline-flex; align-items: center; padding: 0 13px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font-size: 12px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+.tag-page-header > a:hover { border-color: var(--line-strong); background: var(--surface); }
+.tag-entry-list { display: grid; gap: 11px; padding-top: 24px; }
+.tag-entry-card { display: grid; gap: 9px; padding: 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--ink); text-decoration: none; }
+.tag-entry-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.tag-entry-date { color: var(--accent); font: 650 10px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .06em; }
+.tag-entry-card strong { font: 500 18px/1.5 "Iowan Old Style", Georgia, serif; }
+.tag-entry-card small { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 10px; }
+.tag-entry-card small b { color: var(--button); }
+.tag-empty { padding: 60px 0; text-align: center; }
+.tag-empty h2 { margin: 0 0 8px; font-size: 28px; }
+.tag-empty p { color: var(--muted); }
 
 @media (max-width: 980px) {
   .app-shell { grid-template-columns: 248px minmax(0, 1fr); }
@@ -425,8 +465,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .sheet-backdrop { align-items: end; padding: 0; }
   .calendar-sheet { width: 100%; padding: 21px 20px calc(24px + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 20px 20px 0 0; }
   .calendar-sheet .calendar { max-width: 380px; margin: 0 auto; }
+  .calendar-sheet .tag-browser { max-width: 380px; margin: 20px auto 0; }
   .modal-backdrop { align-items: end; padding: 0; }
   .settings { width: 100%; max-height: 88dvh; padding: 22px 18px calc(22px + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 20px 20px 0 0; }
+}
+
+@media (max-width: 560px) {
+  .tag-page { padding-top: 32px; }
+  .tag-page-header { align-items: flex-start; flex-direction: column; gap: 18px; }
+  .tag-page-header > a { width: 100%; justify-content: center; }
+  .tag-entry-card { padding: 15px; }
 }
 
 @media (max-width: 390px) {

@@ -25,15 +25,17 @@ function parts(date: string) {
 }
 
 function setting(key: string, fallback: string) { return (db().prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value?: string } | undefined)?.value || fallback; }
-export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", "") }; }
-export function updateSettings(values: { saveFormat?: string; template?: string }) {
+export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", ""), showTagCloud: setting("showTagCloud", "true") !== "false" }; }
+export function updateSettings(values: { saveFormat?: string; template?: string; showTagCloud?: boolean }) {
   const current = settings();
   const saveFormat = values.saveFormat?.trim() || current.saveFormat;
   if (!saveFormat.includes("YYYY") || !saveFormat.includes("MM") || !saveFormat.includes("DD") || saveFormat.includes("..") || path.isAbsolute(saveFormat)) throw new Error("Save format must be a relative path containing YYYY, MM, and DD.");
   const template = values.template ?? current.template;
+  const showTagCloud = values.showTagCloud ?? current.showTagCloud;
   const insert = db().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
   insert.run("saveFormat", saveFormat);
   insert.run("template", template);
+  insert.run("showTagCloud", String(showTagCloud));
   return settings();
 }
 
@@ -93,6 +95,76 @@ export function saveEntry(date: string, content: string) {
 }
 
 export function entriesForMonth(month: string) { discoverEntries(); return (db().prepare("SELECT date FROM entries WHERE date LIKE ? ORDER BY date").all(`${month}-%`) as { date: string }[]).map((row) => row.date); }
+
+function withoutFencedCode(content: string) {
+  let fence: { character: string; length: number } | null = null;
+  return content.split("\n").map((line) => {
+    const marker = line.match(/^\s*(`{3,}|~{3,})/)?.[1];
+    if (fence) {
+      if (marker?.[0] === fence.character && marker.length >= fence.length) fence = null;
+      return "";
+    }
+    if (marker) {
+      fence = { character: marker[0], length: marker.length };
+      return "";
+    }
+    return line;
+  }).join("\n");
+}
+
+function entryTags(content: string) {
+  const searchable = withoutFencedCode(content)
+    .replace(/`[^`\n]*`/g, " ")
+    .replace(/!?\[[^\]]*\]\([^)]+\)/g, " ")
+    .replace(/https?:\/\/\S+/g, " ");
+  const found = new Map<string, string>();
+  for (const match of searchable.matchAll(/(^|[\s([{"'.,!?;:>])#([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu)) {
+    const label = match[2];
+    const key = label.normalize("NFC").toLocaleLowerCase();
+    if (!found.has(key)) found.set(key, label);
+  }
+  return found;
+}
+
+export function tags() {
+  discoverEntries();
+  const rows = db().prepare("SELECT date, path FROM entries ORDER BY date DESC").all() as { date: string; path: string }[];
+  const cloud = new Map<string, { name: string; dates: string[] }>();
+  for (const row of rows) {
+    if (!fs.existsSync(row.path)) continue;
+    for (const [key, label] of entryTags(fs.readFileSync(row.path, "utf8"))) {
+      const tag = cloud.get(key) ?? { name: label, dates: [] };
+      tag.dates.push(row.date);
+      cloud.set(key, tag);
+    }
+  }
+  return [...cloud.values()]
+    .map((tag) => ({ ...tag, count: tag.dates.length }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+function excerpt(content: string) {
+  return content
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^[#>*_`~-]+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+}
+
+export function entriesTagged(tag: string) {
+  const key = tag.normalize("NFC").toLocaleLowerCase();
+  if (!/^[\p{L}\p{N}][\p{L}\p{N}_-]*$/u.test(key)) return [];
+  discoverEntries();
+  const rows = db().prepare("SELECT date, path FROM entries ORDER BY date DESC").all() as { date: string; path: string }[];
+  return rows.flatMap((row) => {
+    if (!fs.existsSync(row.path)) return [];
+    const content = fs.readFileSync(row.path, "utf8");
+    if (!entryTags(content).has(key)) return [];
+    return [{ date: row.date, excerpt: excerpt(content), words: content.trim() ? content.trim().split(/\s+/).length : 0 }];
+  });
+}
 
 export function saveUpload(file: File) {
   const safeName = path.basename(file.name).replace(/[^a-zA-Z0-9._-]/g, "-") || "attachment";
