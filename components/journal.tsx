@@ -20,6 +20,7 @@ type Entry = {
 };
 type Settings = { saveFormat: string; template: string; showTagCloud: boolean };
 type TagSummary = { name: string; count: number; dates: string[] };
+type ImmichPhoto = { id: string; width: number | null; height: number | null; capturedAt: string | null };
 type SaveState = "saved" | "saving" | "unsaved" | "offline";
 type CachedEntry = Entry & { pending: boolean; updatedAt: string };
 
@@ -200,6 +201,33 @@ function MemoryShelf({ memories, selected, expanded, placement, onToggle, onChoo
   </section>;
 }
 
+function PhotoShelf({ photos, total, selected, placement, onOpen }: {
+  photos: ImmichPhoto[];
+  total: number;
+  selected: string;
+  placement: "desktop" | "mobile";
+  onOpen: (photo: ImmichPhoto) => void;
+}) {
+  if (photos.length === 0) return null;
+  const titleId = `photo-title-${placement}`;
+  const count = total === 1 ? "1 photo" : total > photos.length ? `${photos.length} of ${total} photos` : `${total} photos`;
+  return <section className={`photo-shelf photo-shelf-${placement}`} aria-labelledby={titleId}>
+    <div className="photo-heading"><div><p className="eyebrow">FROM IMMICH</p><h3 id={titleId}>Photos from this day</h3></div><span>{count}</span></div>
+    <div className="photo-grid">
+      {photos.map((photo, index) => <button type="button" className="photo-card" key={photo.id} onClick={() => onOpen(photo)} aria-label={`Open photo ${index + 1} from ${displayDate(selected)} larger`}>
+        <img
+          src={`/api/immich/thumbnail/${encodeURIComponent(photo.id)}`}
+          alt=""
+          width={photo.width || 640}
+          height={photo.height || 480}
+          loading="lazy"
+          decoding="async"
+        />
+      </button>)}
+    </div>
+  </section>;
+}
+
 export default function Journal() {
   const today = useMemo(() => iso(new Date()), []);
   const [selected, setSelected] = useState(today);
@@ -211,6 +239,9 @@ export default function Journal() {
   const [view, setView] = useState<"rich" | "source" | "preview">("rich");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [tags, setTags] = useState<TagSummary[]>([]);
+  const [photos, setPhotos] = useState<ImmichPhoto[]>([]);
+  const [photoTotal, setPhotoTotal] = useState(0);
+  const [openPhoto, setOpenPhoto] = useState<ImmichPhoto | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showAllMemories, setShowAllMemories] = useState(false);
@@ -224,10 +255,19 @@ export default function Journal() {
   const dirtyRef = useRef(dirty);
   const saveStateRef = useRef(saveState);
   const serverContentRef = useRef<string | null>(null);
+  const photoSwipeStartRef = useRef<number | null>(null);
   selectedRef.current = selected;
   entryRef.current = entry;
   dirtyRef.current = dirty;
   saveStateRef.current = saveState;
+
+  const moveOpenPhoto = useCallback((offset: number) => {
+    setOpenPhoto((current) => {
+      if (!current || photos.length < 2) return current;
+      const index = photos.findIndex((photo) => photo.id === current.id);
+      return photos[(Math.max(index, 0) + offset + photos.length) % photos.length];
+    });
+  }, [photos]);
 
   const applyRemoteEntry = useCallback((date: string, remote: Entry) => {
     if (date !== selectedRef.current || remote.content === serverContentRef.current) return;
@@ -368,12 +408,20 @@ export default function Journal() {
   }, [dark, themeReady]);
 
   useEffect(() => {
-    if (!showCalendar && !showSettings) return;
+    if (!showCalendar && !showSettings && !openPhoto) return;
     const previousOverflow = document.body.style.overflow;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setShowCalendar(false);
-      setShowSettings(false);
+      if (event.key === "Escape") {
+        setShowCalendar(false);
+        setShowSettings(false);
+        setOpenPhoto(null);
+      } else if (openPhoto && event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveOpenPhoto(-1);
+      } else if (openPhoto && event.key === "ArrowRight") {
+        event.preventDefault();
+        moveOpenPhoto(1);
+      }
     };
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKeyDown);
@@ -381,7 +429,7 @@ export default function Journal() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [showCalendar, showSettings]);
+  }, [moveOpenPhoto, openPhoto, showCalendar, showSettings]);
 
   useEffect(() => {
     const refresh = () => {
@@ -452,6 +500,23 @@ export default function Journal() {
     loadEntry(selected, controller.signal);
     return () => controller.abort();
   }, [loadEntry, selected]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setPhotos([]);
+    setPhotoTotal(0);
+    setOpenPhoto(null);
+    if (!navigator.onLine) return () => controller.abort();
+    fetch(`/api/immich?date=${selected}`, { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => {
+        if (!result?.configured || !Array.isArray(result.photos)) return;
+        setPhotos(result.photos);
+        setPhotoTotal(typeof result.total === "number" ? result.total : result.photos.length);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [selected]);
 
   useEffect(() => { loadMonth(month); }, [loadMonth, month]);
 
@@ -589,6 +654,7 @@ export default function Journal() {
           </div>
         </header>
 
+        <PhotoShelf photos={photos} total={photoTotal} selected={selected} placement="desktop" onOpen={setOpenPhoto} />
         <MemoryShelf memories={entry.memories} selected={selected} expanded={showAllMemories} placement="desktop" onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />
 
         <div className="editor-tabs" role="tablist" aria-label="Editor mode">
@@ -604,6 +670,7 @@ export default function Journal() {
         <div className={`editor-frame ${loading ? "loading" : ""}`}>
           {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} />}
         </div>
+        <PhotoShelf photos={photos} total={photoTotal} selected={selected} placement="mobile" onOpen={setOpenPhoto} />
         <MemoryShelf memories={entry.memories} selected={selected} expanded={showAllMemories} placement="mobile" onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />
       </section>
 
@@ -628,6 +695,36 @@ export default function Journal() {
           </section>
         </div>
       )}
+
+      {openPhoto && <div className="photo-lightbox-backdrop" role="presentation" onClick={() => setOpenPhoto(null)}>
+        <section
+          className="photo-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Large photo from ${displayDate(selected)}`}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => {
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+            photoSwipeStartRef.current = event.clientX;
+          }}
+          onPointerUp={(event) => {
+            const start = photoSwipeStartRef.current;
+            photoSwipeStartRef.current = null;
+            if (start === null || photos.length < 2) return;
+            const distance = event.clientX - start;
+            if (Math.abs(distance) >= 48) moveOpenPhoto(distance < 0 ? 1 : -1);
+          }}
+          onPointerCancel={() => { photoSwipeStartRef.current = null; }}
+        >
+          <button type="button" className="photo-lightbox-close" onClick={() => setOpenPhoto(null)} aria-label="Close photo">×</button>
+          <img src={`/api/immich/thumbnail/${encodeURIComponent(openPhoto.id)}`} alt={`Photo from ${displayDate(selected)}`} draggable={false} />
+          {photos.length > 1 && <>
+            <button type="button" className="photo-lightbox-nav previous" onClick={() => moveOpenPhoto(-1)} aria-label="Previous photo">←</button>
+            <span className="photo-lightbox-position" aria-live="polite">{photos.findIndex((photo) => photo.id === openPhoto.id) + 1} / {photos.length}</span>
+            <button type="button" className="photo-lightbox-nav next" onClick={() => moveOpenPhoto(1)} aria-label="Next photo">→</button>
+          </>}
+        </section>
+      </div>}
     </main>
   );
 }
