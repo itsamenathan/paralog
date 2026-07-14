@@ -336,7 +336,26 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       ],
     });
     editor.current = new EditorView({ state, parent: host.current });
-    return () => { editor.current?.destroy(); editor.current = null; };
+    const polishVimStatus = () => {
+      const panel = host.current?.querySelector<HTMLElement>(".cm-vim-panel");
+      const status = panel?.firstElementChild;
+      if (!panel || !(status instanceof HTMLSpanElement)) return;
+      const match = status.textContent?.match(/^--(.+)--$/);
+      if (!match) return;
+      const rawMode = match[1];
+      const mode = rawMode.split(/[ (]/, 1)[0].toLowerCase();
+      const label = rawMode
+        .replace("(C-O)", " · command")
+        .toLowerCase()
+        .replace(/(^|\s)\p{L}/gu, (value) => value.toUpperCase());
+      panel.dataset.vimMode = mode;
+      status.textContent = label;
+      status.setAttribute("aria-label", `Vim mode: ${label}`);
+    };
+    const vimStatusObserver = new MutationObserver(polishVimStatus);
+    vimStatusObserver.observe(host.current, { childList: true, subtree: true, characterData: true });
+    polishVimStatus();
+    return () => { vimStatusObserver.disconnect(); editor.current?.destroy(); editor.current = null; };
   }, []);
 
   useEffect(() => {

@@ -25,6 +25,16 @@ type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: 
 type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
 type SaveState = "saved" | "saving" | "unsaved" | "offline";
 type CachedEntry = Entry & { pending: boolean; updatedAt: string };
+type CommandIconName = "edit" | "markdown" | "read" | "focus";
+
+function CommandIcon({ name }: { name: CommandIconName }) {
+  return <svg className="command-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {name === "edit" && <><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></>}
+    {name === "markdown" && <><path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="m14 5-4 14" /></>}
+    {name === "read" && <><path d="M3 5.5A3.5 3.5 0 0 1 6.5 4H11v16H6.5A3.5 3.5 0 0 0 3 21.5Z" /><path d="M21 5.5A3.5 3.5 0 0 0 17.5 4H13v16h4.5a3.5 3.5 0 0 1 3.5 1.5Z" /></>}
+    {name === "focus" && <><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M16 3h3a2 2 0 0 1 2 2v3" /><path d="M8 21H5a2 2 0 0 1-2-2v-3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></>}
+  </svg>;
+}
 
 const EMPTY_ENTRY: Entry = {
   content: "",
@@ -275,6 +285,7 @@ export default function Journal() {
   const [showOutline, setShowOutline] = useState(false);
   const [showRevisions, setShowRevisions] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [outlineJump, setOutlineJump] = useState<number | null>(null);
   const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
@@ -294,6 +305,7 @@ export default function Journal() {
   const serverContentRef = useRef<string | null>(null);
   const photoSwipeStartRef = useRef<number | null>(null);
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   selectedRef.current = selected;
   entryRef.current = entry;
   dirtyRef.current = dirty;
@@ -526,6 +538,22 @@ export default function Journal() {
     window.addEventListener("keydown", leaveFocus);
     return () => window.removeEventListener("keydown", leaveFocus);
   }, [focusMode]);
+
+  useEffect(() => {
+    if (!showTools) return;
+    const closeTools = (event: PointerEvent) => {
+      if (!toolsMenuRef.current?.contains(event.target as Node)) setShowTools(false);
+    };
+    const closeToolsWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowTools(false);
+    };
+    window.addEventListener("pointerdown", closeTools);
+    window.addEventListener("keydown", closeToolsWithKeyboard);
+    return () => {
+      window.removeEventListener("pointerdown", closeTools);
+      window.removeEventListener("keydown", closeToolsWithKeyboard);
+    };
+  }, [showTools]);
 
   useEffect(() => {
     const refresh = () => {
@@ -829,17 +857,22 @@ export default function Journal() {
 
         <div className="entry-workspace">
         <div className="entry-editor-column">
-        <div className="editor-tabs" role="tablist" aria-label="Editor mode">
-          <button type="button" role="tab" aria-selected={view === "rich"} className={view === "rich" ? "active" : ""} onClick={() => setView("rich")}>Editor</button>
-          <button type="button" role="tab" aria-selected={view === "source"} className={view === "source" ? "active" : ""} onClick={() => setView("source")}>Markdown</button>
-          <button type="button" role="tab" aria-selected={view === "preview"} className={view === "preview" ? "active" : ""} onClick={() => setView("preview")}>Read</button>
-          <span>{loading ? "Loading…" : `Markdown · autosave ${settings?.autoSave === false ? "off" : "on"}`}</span>
-        </div>
-        <div className="editor-utility-bar" aria-label="Entry tools">
-          <button type="button" onClick={() => { setShowOutline((value) => !value); setShowStats(false); }} disabled={outline.length === 0}>Outline{outline.length ? ` · ${outline.length}` : ""}</button>
-          <button type="button" onClick={openRevisions}>Versions</button>
-          <button type="button" onClick={() => { setShowStats((value) => !value); setShowOutline(false); }}>{writingStats.words} {writingStats.words === 1 ? "word" : "words"}</button>
-          <button type="button" onClick={() => setFocusMode((value) => !value)}>{focusMode ? "Exit focus" : "Focus"}</button>
+        <div className="editor-command-bar" aria-label="Editor controls">
+          <div className="view-switcher" role="group" aria-label="Entry view">
+            <button type="button" aria-label="Editor view" title="Editor" aria-pressed={view === "rich"} onClick={() => setView("rich")}><CommandIcon name="edit" /></button>
+            <button type="button" aria-label="Markdown source" title="Markdown" aria-pressed={view === "source"} onClick={() => setView("source")}><CommandIcon name="markdown" /></button>
+            <button type="button" aria-label="Reading view" title="Read" aria-pressed={view === "preview"} onClick={() => setView("preview")}><CommandIcon name="read" /></button>
+          </div>
+          <span className="command-spacer" />
+          <button className={`command-stat ${showStats ? "active" : ""}`} type="button" aria-expanded={showStats} onClick={() => { setShowStats((value) => !value); setShowOutline(false); setShowTools(false); }}>{writingStats.words} {writingStats.words === 1 ? "word" : "words"}</button>
+          <button className={`command-icon-button ${focusMode ? "active" : ""}`} type="button" aria-label={focusMode ? "Exit focus mode" : "Enter focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setShowTools(false); }}><CommandIcon name="focus" /></button>
+          <div className="tools-menu-wrap" ref={toolsMenuRef}>
+            <button className={`tools-trigger ${showTools ? "active" : ""}`} type="button" aria-haspopup="menu" aria-expanded={showTools} onClick={() => setShowTools((value) => !value)}>Tools <span aria-hidden="true">⌄</span></button>
+            {showTools && <div className="tools-menu" role="menu">
+              <button type="button" role="menuitem" disabled={outline.length === 0} onClick={() => { setShowOutline((value) => !value); setShowStats(false); setShowTools(false); }}><b>Outline</b><small>{outline.length ? `${outline.length} ${outline.length === 1 ? "heading" : "headings"}` : "No headings yet"}</small></button>
+              <button type="button" role="menuitem" onClick={() => { setShowTools(false); openRevisions(); }}><b>Version history</b><small>Review and restore earlier saves</small></button>
+            </div>}
+          </div>
         </div>
         {showOutline && <nav className="editor-popover outline-panel" aria-label="Entry outline">
           {outline.map((heading) => <button type="button" key={`${heading.line}-${heading.text}`} style={{ "--outline-level": heading.level } as React.CSSProperties} onClick={() => { setView("rich"); setOutlineJump(heading.line); setShowOutline(false); }}>{heading.text}</button>)}

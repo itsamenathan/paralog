@@ -166,7 +166,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .side-actions .action-label { flex: 1; }
 .mobile-bar { display: none; }
 
-.journal-page { width: min(100%, 1120px); margin: 0 auto; padding: 50px clamp(34px, 5vw, 74px) 80px; }
+.journal-page { width: min(100%, 1280px); margin: 0 auto; padding: 50px clamp(28px, 3vw, 46px) 80px clamp(20px, 2vw, 32px); }
 .offline-banner {
   margin-bottom: 20px;
   padding: 10px 13px;
@@ -285,24 +285,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .memory-toggle { display: block; margin: 13px auto 0; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--accent); font-size: 11px; font-weight: 650; }
 .memory-toggle:hover { background: var(--accent-soft); }
 
-.editor-tabs { height: 48px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--line); }
-.editor-tabs button {
-  height: 48px;
-  padding: 0 2px;
-  margin-right: 24px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  font: 600 10px ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-.editor-tabs button:hover { color: var(--ink); }
-.editor-tabs button.active { border-bottom-color: var(--accent); color: var(--ink); }
-.editor-tabs > span { margin: auto 0 14px auto; color: var(--muted); font-size: 10px; }
-.editor-utility-bar { min-height: 42px; display: flex; align-items: center; justify-content: flex-end; gap: 5px; border-bottom: 1px solid var(--line); }
-.editor-utility-bar button { min-height: 30px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 10px; }
-.editor-utility-bar button:hover:not(:disabled) { background: var(--accent-soft); color: var(--ink); }
-.editor-utility-bar button:disabled { opacity: .45; cursor: default; }
+.editor-command-bar { position: relative; z-index: 24; min-height: 52px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); }
+.view-switcher { flex: 0 0 auto; display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.view-switcher button { width: 30px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); }
+.view-switcher button:hover { background: var(--accent-soft); color: var(--ink); }
+.view-switcher button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.command-icon-svg { width: 15px; height: 15px; display: block; }
+.command-spacer { flex: 1 1 auto; }
+.command-stat, .command-icon-button, .tools-trigger { height: 34px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font: 650 10px ui-sans-serif, system-ui, sans-serif; white-space: nowrap; }
+.command-icon-button { width: 34px; display: grid; place-items: center; padding: 0; }
+.command-stat:hover, .command-icon-button:hover, .tools-trigger:hover, .command-stat.active, .command-icon-button.active, .tools-trigger.active { border-color: var(--line); background: var(--surface); color: var(--ink); }
+.command-icon-button.active { color: var(--accent); }
+.tools-trigger span { margin-left: 4px; }
+.tools-menu-wrap { position: relative; flex: 0 0 auto; }
+.tools-menu { position: absolute; top: calc(100% + 7px); right: 0; z-index: 45; width: 238px; display: grid; gap: 2px; padding: 7px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-raised); box-shadow: var(--shadow); }
+.tools-menu button { display: grid; gap: 3px; padding: 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); text-align: left; }
+.tools-menu button:hover:not(:disabled) { background: var(--accent-soft); }
+.tools-menu button:disabled { opacity: .48; cursor: default; }
+.tools-menu b { font-size: 11px; }
+.tools-menu small { color: var(--muted); font-size: 9px; line-height: 1.35; }
 .editor-popover { position: relative; z-index: 11; margin-top: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-raised); box-shadow: var(--shadow); }
 .outline-panel { display: grid; gap: 2px; }
 .outline-panel button { padding: 7px 9px 7px calc(9px + ((var(--outline-level) - 1) * 14px)); border: 0; border-radius: 6px; background: transparent; color: var(--ink); text-align: left; font-size: 12px; }
@@ -401,9 +402,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .live-editor-host .cm-editor { min-height: var(--editor-min-height); background: transparent; color: var(--ink); font: 18px/1.72 "Iowan Old Style", "Palatino Linotype", Georgia, serif; }
 .live-editor-host .cm-editor.cm-focused { outline: none; }
 .live-editor-host .cm-scroller { min-height: var(--editor-min-height); overflow: visible; font-family: inherit; }
-.live-editor-host .cm-panels-bottom { position: sticky; bottom: 0; z-index: 10; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--muted); backdrop-filter: blur(12px); }
-.live-editor-host .cm-vim-panel { min-height: 28px; align-items: center; padding: 3px 9px; font: 600 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .03em; }
-.live-editor-host .cm-vim-panel input { color: var(--ink); font: inherit; }
+.live-editor-host .cm-panels-bottom { position: sticky; bottom: 0; z-index: 10; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--surface-raised) 94%, transparent); color: var(--muted); backdrop-filter: blur(12px); }
+.live-editor-host .cm-vim-panel { min-height: 36px; align-items: center; gap: 7px; padding: 5px 8px; font: 600 10px/1.4 ui-sans-serif, system-ui, sans-serif; }
+.live-editor-host .cm-vim-panel > span:first-child { min-width: 62px; display: inline-flex; align-items: center; justify-content: center; padding: 4px 9px; border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 9px; font-weight: 750; letter-spacing: .045em; text-transform: uppercase; }
+.live-editor-host .cm-vim-panel[data-vim-mode="insert"] > span:first-child { border-color: color-mix(in srgb, var(--success) 28%, transparent); background: color-mix(in srgb, var(--success) 11%, transparent); color: var(--success); }
+.live-editor-host .cm-vim-panel[data-vim-mode="visual"] > span:first-child { border-color: color-mix(in srgb, var(--button) 30%, transparent); background: color-mix(in srgb, var(--button) 12%, transparent); color: var(--button); }
+.live-editor-host .cm-vim-panel[data-vim-mode="replace"] > span:first-child { border-color: color-mix(in srgb, var(--warning) 30%, transparent); background: color-mix(in srgb, var(--warning) 11%, transparent); color: var(--warning); }
+.live-editor-host .cm-vim-panel input { min-width: 0; flex: 1; padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; outline: 0; background: var(--paper); color: var(--ink); font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .live-editor-host .cm-content { min-height: var(--editor-min-height); padding: 27px 5px 60px; caret-color: var(--accent); }
 .live-editor-host .cm-line { padding: 0 7px; }
 .live-editor-host .cm-line span:not([class*="cm-live-"]) { color: inherit !important; }
@@ -477,7 +482,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .app-shell.focus-mode { grid-template-columns: minmax(0, 1fr); }
 .focus-mode .sidebar, .focus-mode .mobile-bar, .focus-mode .entry-header, .focus-mode .photo-shelf, .focus-mode .memory-shelf { display: none !important; }
 .focus-mode .journal-page { width: min(100%, 900px); padding-top: 34px; }
-.focus-mode .editor-tabs { margin-top: 0; }
+.focus-mode .entry-workspace { display: block; }
+.focus-mode .entry-context-column { display: none; }
+.focus-mode .editor-command-bar { margin-top: 0; }
 
 .calendar-sheet { width: min(410px, 100%); max-height: calc(100dvh - 40px); padding: 22px; overflow-y: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-raised); box-shadow: var(--shadow); }
 .sheet-header { margin-bottom: 22px; }
@@ -590,12 +597,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .memory-year { grid-column: 1; }
   .memory-excerpt { grid-column: 1 / -1; grid-row: 2; }
   .memory-meta { grid-column: 2; grid-row: 1; gap: 10px; }
-  .editor-tabs { position: sticky; top: calc(58px + env(safe-area-inset-top)); z-index: 20; height: 47px; background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(14px); }
-  .editor-tabs button { height: 47px; margin-right: 20px; }
-  .editor-tabs > span { display: none; }
-  .editor-utility-bar { justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
-  .editor-utility-bar::-webkit-scrollbar { display: none; }
-  .editor-utility-bar button { flex: 0 0 auto; }
+  .editor-command-bar { position: sticky; top: calc(58px + env(safe-area-inset-top)); z-index: 24; min-height: 47px; background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(14px); }
+  .command-stat, .command-icon-button, .tools-trigger { height: 33px; }
   .stats-panel { grid-template-columns: repeat(2, 1fr); }
   .editor-frame { min-height: var(--editor-min-height); }
   .live-toolbar { top: calc(105px + env(safe-area-inset-top)); margin-inline: -2px; }
@@ -618,7 +621,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .revision-list button { grid-column: 1; grid-row: 2; justify-self: start; }
   .revision-list details { grid-column: 1; grid-row: 3; }
   .focus-mode .journal-page { padding-top: 14px; }
-  .focus-mode .editor-tabs { top: 0; }
+  .focus-mode .editor-command-bar { top: 0; }
   .focus-mode .live-toolbar { top: 47px; }
 }
 
