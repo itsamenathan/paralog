@@ -171,6 +171,35 @@ function TagBrowser({ tags }: {
   </section>;
 }
 
+function MemoryShelf({ memories, selected, expanded, placement, onToggle, onChoose }: {
+  memories: Memory[];
+  selected: string;
+  expanded: boolean;
+  placement: "desktop" | "mobile";
+  onToggle: () => void;
+  onChoose: (date: string) => void;
+}) {
+  if (memories.length === 0) return null;
+  const titleId = `memory-title-${placement}`;
+  const listId = `memory-list-${placement}`;
+  return <section className={`memory-shelf memory-shelf-${placement}`} aria-labelledby={titleId}>
+    <div className="memory-heading"><div><p className="eyebrow">FROM YOUR ARCHIVE</p><h3 id={titleId}>This day, other years</h3></div><span>{memories.length} {memories.length === 1 ? "memory" : "memories"}</span></div>
+    <div className="memory-list" id={listId}>
+      {(expanded ? memories : memories.slice(0, 3)).map((memory) => {
+        const yearsAgo = fromIso(selected).getFullYear() - fromIso(memory.date).getFullYear();
+        return <button type="button" className="memory-card" key={memory.date} onClick={() => onChoose(memory.date)}>
+          <span className="memory-year">{fromIso(memory.date).getFullYear()} <small>{yearsAgo} {yearsAgo === 1 ? "year" : "years"} ago</small></span>
+          <span className="memory-excerpt">{memory.excerpt || "A quiet page from this day."}</span>
+          <span className="memory-meta">{memory.words} words <b aria-hidden="true">→</b></span>
+        </button>;
+      })}
+    </div>
+    {memories.length > 3 && <button type="button" className="memory-toggle" aria-expanded={expanded} aria-controls={listId} onClick={onToggle}>
+      {expanded ? "Show fewer" : `Show all ${memories.length} years`}
+    </button>}
+  </section>;
+}
+
 export default function Journal() {
   const today = useMemo(() => iso(new Date()), []);
   const [selected, setSelected] = useState(today);
@@ -184,6 +213,7 @@ export default function Journal() {
   const [tags, setTags] = useState<TagSummary[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showAllMemories, setShowAllMemories] = useState(false);
   const [dark, setDark] = useState(false);
   const [themeReady, setThemeReady] = useState(false);
   const [online, setOnline] = useState(true);
@@ -418,6 +448,7 @@ export default function Journal() {
     const controller = new AbortController();
     serverContentRef.current = null;
     setRemoteUpdate(null);
+    setShowAllMemories(false);
     loadEntry(selected, controller.signal);
     return () => controller.abort();
   }, [loadEntry, selected]);
@@ -558,21 +589,7 @@ export default function Journal() {
           </div>
         </header>
 
-        {entry.memories.length > 0 && (
-          <section className="memory-shelf" aria-labelledby="memory-title">
-            <div className="memory-heading"><div><p className="eyebrow">FROM YOUR ARCHIVE</p><h3 id="memory-title">This day, other years</h3></div><span>{entry.memories.length} {entry.memories.length === 1 ? "memory" : "memories"}</span></div>
-            <div className="memory-list">
-              {entry.memories.map((memory) => {
-                const yearsAgo = fromIso(selected).getFullYear() - fromIso(memory.date).getFullYear();
-                return <button type="button" className="memory-card" key={memory.date} onClick={() => choose(memory.date)}>
-                  <span className="memory-year">{fromIso(memory.date).getFullYear()} <small>{yearsAgo} {yearsAgo === 1 ? "year" : "years"} ago</small></span>
-                  <span className="memory-excerpt">{memory.excerpt || "A quiet page from this day."}</span>
-                  <span className="memory-meta">{memory.words} words <b>Open →</b></span>
-                </button>;
-              })}
-            </div>
-          </section>
-        )}
+        <MemoryShelf memories={entry.memories} selected={selected} expanded={showAllMemories} placement="desktop" onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />
 
         <div className="editor-tabs" role="tablist" aria-label="Editor mode">
           <button type="button" role="tab" aria-selected={view === "rich"} className={view === "rich" ? "active" : ""} onClick={() => setView("rich")}>Editor</button>
@@ -587,6 +604,7 @@ export default function Journal() {
         <div className={`editor-frame ${loading ? "loading" : ""}`}>
           {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} />}
         </div>
+        <MemoryShelf memories={entry.memories} selected={selected} expanded={showAllMemories} placement="mobile" onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />
       </section>
 
       {showCalendar && (

@@ -229,27 +229,33 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .save-button:disabled { opacity: .55; cursor: wait; }
 
 .memory-shelf { margin: 24px 0 0; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+.memory-shelf-mobile { display: none; }
 .memory-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
 .memory-heading h3 { margin: 0; font-size: 21px; line-height: 1.1; letter-spacing: -.02em; }
 .memory-heading > span { color: var(--muted); font-size: 10px; }
-.memory-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.memory-list { display: grid; border-top: 1px solid var(--line); }
 .memory-card {
   min-width: 0;
   display: grid;
-  gap: 9px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--paper);
+  grid-template-columns: 130px minmax(0, 1fr) 94px;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
   color: var(--ink);
   text-align: left;
 }
-.memory-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
-.memory-year { display: flex; justify-content: space-between; align-items: baseline; font: 700 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.memory-card:hover { background: var(--accent-soft); }
+.memory-card:focus-visible { position: relative; z-index: 1; outline-offset: 2px; }
+.memory-year { display: flex; align-items: baseline; gap: 9px; font: 700 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .memory-year small { color: var(--muted); font: 500 9px ui-sans-serif, system-ui, sans-serif; }
-.memory-excerpt { min-height: 2.9em; overflow: hidden; color: var(--muted); font: 15px/1.45 "Iowan Old Style", Georgia, serif; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.memory-excerpt { min-width: 0; overflow: hidden; color: var(--muted); font: 15px/1.45 "Iowan Old Style", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
 .memory-meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
 .memory-meta b { color: var(--accent); font-weight: 650; }
+.memory-toggle { display: block; margin: 13px auto 0; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--accent); font-size: 11px; font-weight: 650; }
+.memory-toggle:hover { background: var(--accent-soft); }
 
 .editor-tabs { height: 48px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--line); }
 .editor-tabs button {
@@ -448,12 +454,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .header-actions { gap: 8px; }
   .save-status { font-size: 10px; }
   .upload-button, .save-button { min-height: 37px; padding-inline: 11px; }
-  .memory-shelf { margin-top: 18px; padding: 16px 0 15px 16px; overflow: hidden; }
-  .memory-heading { padding-right: 16px; }
+  .memory-shelf { margin-top: 18px; padding: 16px; }
+  .memory-shelf-desktop { display: none; }
+  .memory-shelf-mobile { display: block; margin-top: 6px; }
   .memory-heading h3 { font-size: 20px; }
-  .memory-list { display: flex; gap: 10px; overflow-x: auto; padding: 1px 16px 8px 0; scroll-snap-type: x mandatory; scrollbar-width: none; }
-  .memory-list::-webkit-scrollbar { display: none; }
-  .memory-card { flex: 0 0 min(78vw, 270px); scroll-snap-align: start; }
+  .memory-card { grid-template-columns: 1fr auto; gap: 4px 12px; padding: 12px 3px; }
+  .memory-year { grid-column: 1; }
+  .memory-excerpt { grid-column: 1 / -1; grid-row: 2; }
+  .memory-meta { grid-column: 2; grid-row: 1; gap: 10px; }
   .editor-tabs { position: sticky; top: calc(58px + env(safe-area-inset-top)); z-index: 20; height: 47px; background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(14px); }
   .editor-tabs button { height: 47px; margin-right: 20px; }
   .editor-tabs > span { display: none; }
