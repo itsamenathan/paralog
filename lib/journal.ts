@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { diffLines } from "diff";
 
 export const dataDir = process.env.PARALOG_DATA_DIR || path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "journal.db");
@@ -13,7 +14,7 @@ function db() {
     fs.mkdirSync(dataDir, { recursive: true });
     database = new Database(dbPath);
     database.pragma("journal_mode = WAL");
-    database.exec("CREATE TABLE IF NOT EXISTS entries (date TEXT PRIMARY KEY, path TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    database.exec("CREATE TABLE IF NOT EXISTS entries (date TEXT PRIMARY KEY, path TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS revisions_date_created ON revisions(date, created_at DESC)");
   }
   return database;
 }
@@ -25,17 +26,21 @@ function parts(date: string) {
 }
 
 function setting(key: string, fallback: string) { return (db().prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value?: string } | undefined)?.value || fallback; }
-export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", ""), showTagCloud: setting("showTagCloud", "true") !== "false" }; }
-export function updateSettings(values: { saveFormat?: string; template?: string; showTagCloud?: boolean }) {
+export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", ""), showTagCloud: setting("showTagCloud", "true") !== "false", vimMode: setting("vimMode", "false") === "true", autoSave: setting("autoSave", "true") !== "false" }; }
+export function updateSettings(values: { saveFormat?: string; template?: string; showTagCloud?: boolean; vimMode?: boolean; autoSave?: boolean }) {
   const current = settings();
   const saveFormat = values.saveFormat?.trim() || current.saveFormat;
   if (!saveFormat.includes("YYYY") || !saveFormat.includes("MM") || !saveFormat.includes("DD") || saveFormat.includes("..") || path.isAbsolute(saveFormat)) throw new Error("Save format must be a relative path containing YYYY, MM, and DD.");
   const template = values.template ?? current.template;
   const showTagCloud = values.showTagCloud ?? current.showTagCloud;
+  const vimMode = values.vimMode ?? current.vimMode;
+  const autoSave = values.autoSave ?? current.autoSave;
   const insert = db().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
   insert.run("saveFormat", saveFormat);
   insert.run("template", template);
   insert.run("showTagCloud", String(showTagCloud));
+  insert.run("vimMode", String(vimMode));
+  insert.run("autoSave", String(autoSave));
   return settings();
 }
 
@@ -89,6 +94,14 @@ export function getEntry(date: string) {
 export function saveEntry(date: string, content: string) {
   const filePath = entryPath(date);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  if (fs.existsSync(filePath)) {
+    const previous = fs.readFileSync(filePath, "utf8");
+    if (previous !== content && previous !== `${content}\n`) {
+      const latest = db().prepare("SELECT content FROM revisions WHERE date = ? ORDER BY id DESC LIMIT 1").get(date) as { content: string } | undefined;
+      if (latest?.content !== previous) db().prepare("INSERT INTO revisions (date, content, created_at) VALUES (?, ?, ?)").run(date, previous, new Date().toISOString());
+      db().prepare("DELETE FROM revisions WHERE date = ? AND id NOT IN (SELECT id FROM revisions WHERE date = ? ORDER BY id DESC LIMIT 50)").run(date, date);
+    }
+  }
   fs.writeFileSync(filePath, content.endsWith("\n") ? content : `${content}\n`, "utf8");
   db().prepare("INSERT INTO entries (date, path, updated_at) VALUES (?, ?, ?) ON CONFLICT(date) DO UPDATE SET path = excluded.path, updated_at = excluded.updated_at").run(date, filePath, new Date().toISOString());
   return { date, saved: true };
@@ -110,6 +123,58 @@ function withoutFencedCode(content: string) {
     }
     return line;
   }).join("\n");
+}
+
+export function revisionsForDate(date: string) {
+  const revisions = db().prepare("SELECT id, content, created_at AS createdAt FROM revisions WHERE date = ? ORDER BY id DESC LIMIT 50").all(date) as { id: number; content: string; createdAt: string }[];
+  const currentPath = entryPath(date);
+  let nextContent = fs.existsSync(currentPath) ? fs.readFileSync(currentPath, "utf8") : "";
+  return revisions.map((revision) => {
+    const diff = revisionChanges(revision.content, nextContent);
+    nextContent = revision.content;
+    return {
+      id: revision.id,
+      createdAt: revision.createdAt,
+      words: revision.content.trim() ? revision.content.trim().split(/\s+/).length : 0,
+      diff,
+    };
+  });
+}
+
+type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: string; count?: number };
+
+function revisionChanges(before: string, after: string) {
+  const changes = diffLines(before, after, { timeout: 100 }) ?? [
+    { value: before, added: false, removed: true, count: before.split("\n").length },
+    { value: after, added: true, removed: false, count: after.split("\n").length },
+  ];
+  const lines: RevisionDiffLine[] = [];
+  let additions = 0;
+  let deletions = 0;
+
+  changes.forEach((change, index) => {
+    const values = change.value.split("\n");
+    if (values.at(-1) === "") values.pop();
+    if (change.added) additions += values.length;
+    if (change.removed) deletions += values.length;
+    if (change.added || change.removed || values.length <= 4) {
+      const type = change.added ? "added" : change.removed ? "removed" : "context";
+      lines.push(...values.map((text) => ({ type, text }) as RevisionDiffLine));
+      return;
+    }
+
+    const leading = index === 0 ? [] : values.slice(0, 2);
+    const trailing = index === changes.length - 1 ? [] : values.slice(-2);
+    lines.push(...leading.map((text) => ({ type: "context" as const, text })));
+    lines.push({ type: "skip", text: "", count: values.length - leading.length - trailing.length });
+    lines.push(...trailing.map((text) => ({ type: "context" as const, text })));
+  });
+
+  return { additions, deletions, lines };
+}
+
+export function revisionForDate(date: string, id: number) {
+  return db().prepare("SELECT id, content, created_at AS createdAt FROM revisions WHERE date = ? AND id = ?").get(date, id) as { id: number; content: string; createdAt: string } | undefined;
 }
 
 function entryTags(content: string) {

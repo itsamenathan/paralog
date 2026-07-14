@@ -18,9 +18,11 @@ type Entry = {
   memories: Memory[];
   template: string;
 };
-type Settings = { saveFormat: string; template: string; showTagCloud: boolean };
+type Settings = { saveFormat: string; template: string; showTagCloud: boolean; vimMode: boolean; autoSave: boolean };
 type TagSummary = { name: string; count: number; dates: string[] };
 type ImmichPhoto = { id: string; width: number | null; height: number | null; capturedAt: string | null };
+type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: string; count?: number };
+type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
 type SaveState = "saved" | "saving" | "unsaved" | "offline";
 type CachedEntry = Entry & { pending: boolean; updatedAt: string };
 
@@ -54,6 +56,34 @@ const displayDate = (value: string) =>
     day: "numeric",
     year: "numeric",
   }).format(fromIso(value));
+
+function keepSourceCursorVisible(textarea: HTMLTextAreaElement) {
+  const viewport = window.visualViewport;
+  if (!viewport || window.innerWidth > 720 || document.activeElement !== textarea) return;
+  window.requestAnimationFrame(() => {
+    const style = getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 31;
+    const paddingTop = Number.parseFloat(style.paddingTop) || 0;
+    const line = textarea.value.slice(0, textarea.selectionStart).split("\n").length - 1;
+    const caretTop = paddingTop + line * lineHeight;
+    const rect = textarea.getBoundingClientRect();
+    const visibleHeight = Math.max(80, Math.min(textarea.clientHeight, viewport.offsetTop + viewport.height - Math.max(rect.top, viewport.offsetTop) - 28));
+    const upperEdge = textarea.scrollTop + lineHeight;
+    const lowerEdge = textarea.scrollTop + visibleHeight - lineHeight * 2;
+    if (caretTop > lowerEdge) textarea.scrollTop = caretTop - visibleHeight + lineHeight * 2;
+    else if (caretTop < upperEdge) textarea.scrollTop = Math.max(0, caretTop - lineHeight);
+  });
+}
+
+function entryOutline(content: string) {
+  let fenced = false;
+  return content.split("\n").flatMap((line, index) => {
+    if (/^\s*(`{3,}|~{3,})/.test(line)) { fenced = !fenced; return []; }
+    if (fenced) return [];
+    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    return heading ? [{ line: index + 1, level: heading[1].length, text: heading[2] }] : [];
+  });
+}
 
 function readCachedEntry(date: string): CachedEntry | null {
   try {
@@ -242,6 +272,13 @@ export default function Journal() {
   const [photos, setPhotos] = useState<ImmichPhoto[]>([]);
   const [photoTotal, setPhotoTotal] = useState(0);
   const [openPhoto, setOpenPhoto] = useState<ImmichPhoto | null>(null);
+  const [showOutline, setShowOutline] = useState(false);
+  const [showRevisions, setShowRevisions] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [outlineJump, setOutlineJump] = useState<number | null>(null);
+  const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showAllMemories, setShowAllMemories] = useState(false);
@@ -260,6 +297,13 @@ export default function Journal() {
   entryRef.current = entry;
   dirtyRef.current = dirty;
   saveStateRef.current = saveState;
+  const outline = useMemo(() => entryOutline(entry.content), [entry.content]);
+  const writingStats = useMemo(() => {
+    const trimmed = entry.content.trim();
+    const words = trimmed ? trimmed.split(/\s+/).length : 0;
+    return { words, characters: entry.content.length, paragraphs: trimmed ? trimmed.split(/\n\s*\n/).length : 0, minutes: words ? Math.max(1, Math.ceil(words / 220)) : 0 };
+  }, [entry.content]);
+  const handleJumpHandled = useCallback(() => setOutlineJump(null), []);
 
   const moveOpenPhoto = useCallback((offset: number) => {
     setOpenPhoto((current) => {
@@ -408,12 +452,56 @@ export default function Journal() {
   }, [dark, themeReady]);
 
   useEffect(() => {
-    if (!showCalendar && !showSettings && !openPhoto) return;
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const root = document.documentElement;
+    let frame = 0;
+    let baselineHeight = Math.max(window.innerHeight, root.clientHeight);
+    const updateKeyboardInset = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const currentLayoutHeight = Math.max(window.innerHeight, root.clientHeight);
+        baselineHeight = Math.max(baselineHeight, currentLayoutHeight);
+        const measuredInset = Math.max(0, Math.round(baselineHeight - viewport.height - viewport.offsetTop));
+        const overlayInset = Math.max(0, Math.round(currentLayoutHeight - viewport.height - viewport.offsetTop));
+        const keyboardInset = measuredInset > 80 ? measuredInset : 0;
+        root.style.setProperty("--mobile-keyboard-height", `${keyboardInset}px`);
+        root.style.setProperty("--mobile-keyboard-offset", `${overlayInset > 80 ? overlayInset : 0}px`);
+        root.toggleAttribute("data-mobile-keyboard", keyboardInset > 0);
+        window.dispatchEvent(new CustomEvent("paralog:keyboard-viewport", { detail: { keyboardInset } }));
+        if (keyboardInset > 0 && document.activeElement instanceof HTMLTextAreaElement && document.activeElement.classList.contains("source-editor")) {
+          document.activeElement.scrollIntoView({ block: "nearest" });
+          keepSourceCursorVisible(document.activeElement);
+        }
+      });
+    };
+    updateKeyboardInset();
+    viewport.addEventListener("resize", updateKeyboardInset);
+    viewport.addEventListener("scroll", updateKeyboardInset);
+    const handleOrientation = () => {
+      baselineHeight = Math.max(window.innerHeight, root.clientHeight);
+      updateKeyboardInset();
+    };
+    window.addEventListener("orientationchange", handleOrientation);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      viewport.removeEventListener("resize", updateKeyboardInset);
+      viewport.removeEventListener("scroll", updateKeyboardInset);
+      window.removeEventListener("orientationchange", handleOrientation);
+      root.style.removeProperty("--mobile-keyboard-height");
+      root.style.removeProperty("--mobile-keyboard-offset");
+      root.removeAttribute("data-mobile-keyboard");
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showCalendar && !showSettings && !showRevisions && !openPhoto) return;
     const previousOverflow = document.body.style.overflow;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setShowCalendar(false);
         setShowSettings(false);
+        setShowRevisions(false);
         setOpenPhoto(null);
       } else if (openPhoto && event.key === "ArrowLeft") {
         event.preventDefault();
@@ -429,7 +517,14 @@ export default function Journal() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [moveOpenPhoto, openPhoto, showCalendar, showSettings]);
+  }, [moveOpenPhoto, openPhoto, showCalendar, showRevisions, showSettings]);
+
+  useEffect(() => {
+    if (!focusMode) return;
+    const leaveFocus = (event: KeyboardEvent) => { if (event.key === "Escape") setFocusMode(false); };
+    window.addEventListener("keydown", leaveFocus);
+    return () => window.removeEventListener("keydown", leaveFocus);
+  }, [focusMode]);
 
   useEffect(() => {
     const refresh = () => {
@@ -521,10 +616,21 @@ export default function Journal() {
   useEffect(() => { loadMonth(month); }, [loadMonth, month]);
 
   useEffect(() => {
-    if (!dirty || remoteUpdate) return;
+    if (!settings?.autoSave || !dirty || remoteUpdate) return;
     const timer = window.setTimeout(() => persistEntry(selected, entry.content, entry), 850);
     return () => window.clearTimeout(timer);
-  }, [dirty, entry, persistEntry, remoteUpdate, selected]);
+  }, [dirty, entry, persistEntry, remoteUpdate, selected, settings?.autoSave]);
+
+  useEffect(() => {
+    const saveWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "s" || (!event.ctrlKey && !event.metaKey) || event.altKey) return;
+      event.preventDefault();
+      if (loading || saveStateRef.current === "saving") return;
+      void persistEntry(selectedRef.current, entryRef.current.content, entryRef.current);
+    };
+    window.addEventListener("keydown", saveWithKeyboard);
+    return () => window.removeEventListener("keydown", saveWithKeyboard);
+  }, [loading, persistEntry]);
 
   function changeContent(content: string) {
     setEntry((current) => ({ ...current, content }));
@@ -553,18 +659,43 @@ export default function Journal() {
     choose(iso(date));
   }
 
-  async function upload(file: File) {
-    if (!navigator.onLine) { setSaveState("offline"); return; }
+  async function uploadFile(file: File) {
+    if (!navigator.onLine) { setSaveState("offline"); return null; }
     const data = new FormData();
     data.append("file", file);
     const response = await fetch("/api/uploads", { method: "POST", body: data });
-    if (!response.ok) return;
+    if (!response.ok) return null;
     const uploaded = await response.json();
     const url = `/api/files?path=${encodeURIComponent(uploaded.path)}`;
-    const markdown = uploaded.type.startsWith("image/")
-      ? `![${uploaded.name}](${url})`
-      : `[${uploaded.name}](${url})`;
+    const label = String(uploaded.name).replace(/([\\\[\]])/g, "\\$1");
+    return uploaded.type.startsWith("image/")
+      ? `![${label}](${url})`
+      : `[${label}](${url})`;
+  }
+
+  async function upload(file: File) {
+    const markdown = await uploadFile(file);
+    if (!markdown) return;
     changeContent(`${entry.content}${entry.content && !entry.content.endsWith("\n") ? "\n" : ""}${markdown}\n`);
+  }
+
+  async function openRevisions() {
+    setShowRevisions(true);
+    setRevisionsLoading(true);
+    try {
+      const response = await fetch(`/api/revisions?date=${selected}`, { cache: "no-store" });
+      if (response.ok) setRevisions((await response.json()).revisions);
+    } finally {
+      setRevisionsLoading(false);
+    }
+  }
+
+  async function restoreRevision(id: number) {
+    const response = await fetch(`/api/revisions/${id}?date=${selected}`, { cache: "no-store" });
+    if (!response.ok) return;
+    const revision = await response.json();
+    changeContent(revision.content);
+    setShowRevisions(false);
   }
 
   async function persistSettings() {
@@ -605,14 +736,22 @@ export default function Journal() {
     offline: "Saved offline",
   };
   const sourceEditor = (
-    <textarea className="source-editor" value={entry.content} onChange={(event) => changeContent(event.target.value)} placeholder="What’s on your mind?" autoFocus />
+    <textarea
+      className="source-editor"
+      value={entry.content}
+      onChange={(event) => { changeContent(event.target.value); keepSourceCursorVisible(event.currentTarget); }}
+      onFocus={(event) => keepSourceCursorVisible(event.currentTarget)}
+      onSelect={(event) => keepSourceCursorVisible(event.currentTarget)}
+      placeholder="What’s on your mind?"
+      autoFocus
+    />
   );
   const rendered = (
     <article className="preview"><ReactMarkdown remarkPlugins={[remarkHashtags]}>{entry.content || "*Nothing here yet.*"}</ReactMarkdown></article>
   );
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${focusMode ? "focus-mode" : ""}`}>
       <aside className="sidebar">
         <div className="brand"><p className="eyebrow">PRIVATE JOURNAL</p><h1>Paralog</h1></div>
         <button className="today-button" type="button" onClick={() => choose(today)}><span>Today</span><b aria-hidden="true">↗</b></button>
@@ -650,25 +789,42 @@ export default function Journal() {
           <div className="header-actions">
             <span className={`save-status ${saveState}`} aria-live="polite"><i />{statusCopy[saveState]}</span>
             <label className={`upload-button ${!online ? "disabled" : ""}`}>＋ Attach<input type="file" disabled={!online} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])} /></label>
-            <button className="save-button" type="button" onClick={() => persistEntry(selected, entry.content, entry)} disabled={saveState === "saving"}>{saveState === "saving" ? "Saving…" : "Save now"}</button>
+            <button className="save-button" type="button" title="Save entry (Ctrl+S or Cmd+S)" onClick={() => persistEntry(selected, entry.content, entry)} disabled={saveState === "saving"}>{saveState === "saving" ? "Saving…" : "Save now"}</button>
           </div>
         </header>
 
-        <PhotoShelf photos={photos} total={photoTotal} selected={selected} placement="desktop" onOpen={setOpenPhoto} />
-        <MemoryShelf memories={entry.memories} selected={selected} expanded={showAllMemories} placement="desktop" onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />
-
+        <div className="entry-workspace">
+        <div className="entry-editor-column">
         <div className="editor-tabs" role="tablist" aria-label="Editor mode">
           <button type="button" role="tab" aria-selected={view === "rich"} className={view === "rich" ? "active" : ""} onClick={() => setView("rich")}>Editor</button>
           <button type="button" role="tab" aria-selected={view === "source"} className={view === "source" ? "active" : ""} onClick={() => setView("source")}>Markdown</button>
           <button type="button" role="tab" aria-selected={view === "preview"} className={view === "preview" ? "active" : ""} onClick={() => setView("preview")}>Read</button>
-          <span>{loading ? "Loading…" : "Markdown · autosave on"}</span>
+          <span>{loading ? "Loading…" : `Markdown · autosave ${settings?.autoSave === false ? "off" : "on"}`}</span>
         </div>
+        <div className="editor-utility-bar" aria-label="Entry tools">
+          <button type="button" onClick={() => { setShowOutline((value) => !value); setShowStats(false); }} disabled={outline.length === 0}>Outline{outline.length ? ` · ${outline.length}` : ""}</button>
+          <button type="button" onClick={openRevisions}>Versions</button>
+          <button type="button" onClick={() => { setShowStats((value) => !value); setShowOutline(false); }}>{writingStats.words} {writingStats.words === 1 ? "word" : "words"}</button>
+          <button type="button" onClick={() => setFocusMode((value) => !value)}>{focusMode ? "Exit focus" : "Focus"}</button>
+        </div>
+        {showOutline && <nav className="editor-popover outline-panel" aria-label="Entry outline">
+          {outline.map((heading) => <button type="button" key={`${heading.line}-${heading.text}`} style={{ "--outline-level": heading.level } as React.CSSProperties} onClick={() => { setView("rich"); setOutlineJump(heading.line); setShowOutline(false); }}>{heading.text}</button>)}
+        </nav>}
+        {showStats && <section className="editor-popover stats-panel" aria-label="Writing statistics">
+          <span><b>{writingStats.words}</b> words</span><span><b>{writingStats.characters}</b> characters</span><span><b>{writingStats.paragraphs}</b> paragraphs</span><span><b>{writingStats.minutes}</b> min read</span>
+        </section>}
 
         {!entry.exists && !entry.content && entry.template && (
           <button className="template-button" type="button" onClick={() => changeContent(entry.template)}>Start with your template →</button>
         )}
         <div className={`editor-frame ${loading ? "loading" : ""}`}>
-          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} />}
+          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} />}
+        </div>
+        </div>
+        <aside className="entry-context-column" aria-label="Photos and archive memories">
+        <PhotoShelf photos={photos} total={photoTotal} selected={selected} placement="desktop" onOpen={setOpenPhoto} />
+        <MemoryShelf memories={entry.memories} selected={selected} expanded={showAllMemories} placement="desktop" onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />
+        </aside>
         </div>
         <PhotoShelf photos={photos} total={photoTotal} selected={selected} placement="mobile" onOpen={setOpenPhoto} />
         <MemoryShelf memories={entry.memories} selected={selected} expanded={showAllMemories} placement="mobile" onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />
@@ -691,10 +847,39 @@ export default function Journal() {
             <label>Save format<small>Tokens: YYYY, MM, MMMM, DD, dddd. Existing files stay where they are.</small><input value={settings.saveFormat} onChange={(event) => setSettings({ ...settings, saveFormat: event.target.value })} /></label>
             <label>New entry template<small>Use any Markdown you want as a starting point.</small><textarea value={settings.template} onChange={(event) => setSettings({ ...settings, template: event.target.value })} /></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.showTagCloud} onChange={(event) => setSettings({ ...settings, showTagCloud: event.target.checked })} /><span><b>Show tag cloud</b><small>Collect hashtags from your entries in the desktop sidebar and mobile calendar.</small></span></label>
+            <label className="toggle-setting"><input type="checkbox" checked={settings.autoSave} onChange={(event) => setSettings({ ...settings, autoSave: event.target.checked })} /><span><b>Automatically save entries</b><small>Save after you pause typing. You can always save immediately with Ctrl+S or Cmd+S.</small></span></label>
+            <label className="toggle-setting"><input type="checkbox" checked={settings.vimMode} onChange={(event) => setSettings({ ...settings, vimMode: event.target.checked })} /><span><b>Vim keybindings</b><small>Enable Normal, Insert, and Visual modes in the Live Preview editor on desktop. Mobile always uses standard editing.</small></span></label>
             <div className="settings-actions"><button className="text-button" type="button" onClick={signOut}>Sign out</button><button className="save-button" type="button" onClick={persistSettings} disabled={!online}>Save settings</button></div>
           </section>
         </div>
       )}
+
+      {showRevisions && <div className="modal-backdrop" role="presentation" onClick={() => setShowRevisions(false)}>
+        <section className="revisions-panel" role="dialog" aria-modal="true" aria-labelledby="revisions-title" onClick={(event) => event.stopPropagation()}>
+          <div className="settings-title"><div><p className="eyebrow">ENTRY HISTORY</p><h2 id="revisions-title">Previous versions</h2></div><button type="button" onClick={() => setShowRevisions(false)} aria-label="Close versions">×</button></div>
+          {revisionsLoading ? <p className="panel-empty">Loading versions…</p> : revisions.length === 0 ? <p className="panel-empty">No previous versions yet. Paralog creates one when saved content changes.</p> : <div className="revision-list">
+            {revisions.map((revision, index) => <article key={revision.id}>
+              <div className="revision-meta">
+                <strong>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(revision.createdAt))}</strong>
+                <small>{revision.words} {revision.words === 1 ? "word" : "words"}</small>
+                <span className="revision-additions">+{revision.diff.additions}</span>
+                <span className="revision-deletions">−{revision.diff.deletions}</span>
+              </div>
+              <details open={index === 0}>
+                <summary>View changes</summary>
+                <div className="revision-diff" aria-label="Changes made after this version">
+                  {revision.diff.lines.map((line, lineIndex) => line.type === "skip"
+                    ? <div className="diff-skip" key={`${revision.id}-line-${lineIndex}`}>⋯ {line.count} unchanged {line.count === 1 ? "line" : "lines"}</div>
+                    : <div className={`diff-line diff-${line.type}`} aria-label={`${line.type === "added" ? "Added" : line.type === "removed" ? "Removed" : "Unchanged"}: ${line.text || "blank line"}`} key={`${revision.id}-line-${lineIndex}`}>
+                      <span aria-hidden="true">{line.type === "added" ? "+" : line.type === "removed" ? "−" : " "}</span><code>{line.text || " "}</code>
+                    </div>)}
+                </div>
+              </details>
+              <button type="button" onClick={() => restoreRevision(revision.id)}>Restore this version</button>
+            </article>)}
+          </div>}
+        </section>
+      </div>}
 
       {openPhoto && <div className="photo-lightbox-backdrop" role="presentation" onClick={() => setOpenPhoto(null)}>
         <section
