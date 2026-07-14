@@ -334,6 +334,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   font: 18px/1.72 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   resize: vertical;
 }
+.source-editor { height: auto; overflow-y: hidden; resize: none; field-sizing: content; }
+.source-editor:focus-visible { outline: 0 !important; outline-offset: 0; }
 .source-editor::placeholder { color: var(--muted); opacity: .62; }
 .preview { overflow-wrap: anywhere; }
 .preview h1, .preview h2, .preview h3 { margin: 1.35em 0 .4em; }

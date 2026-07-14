@@ -293,6 +293,7 @@ export default function Journal() {
   const saveStateRef = useRef(saveState);
   const serverContentRef = useRef<string | null>(null);
   const photoSwipeStartRef = useRef<number | null>(null);
+  const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
   selectedRef.current = selected;
   entryRef.current = entry;
   dirtyRef.current = dirty;
@@ -632,6 +633,38 @@ export default function Journal() {
     return () => window.removeEventListener("keydown", saveWithKeyboard);
   }, [loading, persistEntry]);
 
+  const resizeSourceEditor = useCallback((target?: HTMLTextAreaElement | null) => {
+    const editor = target ?? sourceEditorRef.current;
+    if (!editor) return;
+    if (CSS.supports("field-sizing", "content")) {
+      editor.style.height = "";
+      return;
+    }
+    editor.style.height = "auto";
+    editor.style.height = `${editor.scrollHeight}px`;
+  }, []);
+
+  useEffect(() => {
+    if (view !== "source") return;
+    const frame = window.requestAnimationFrame(() => resizeSourceEditor());
+    return () => window.cancelAnimationFrame(frame);
+  }, [entry.content, resizeSourceEditor, view]);
+
+  useEffect(() => {
+    if (view !== "source") return;
+    const editor = sourceEditorRef.current;
+    if (!editor) return;
+    let width = editor.getBoundingClientRect().width;
+    const observer = new ResizeObserver(([entry]) => {
+      const nextWidth = entry.contentRect.width;
+      if (Math.abs(nextWidth - width) < 0.5) return;
+      width = nextWidth;
+      resizeSourceEditor(editor);
+    });
+    observer.observe(editor);
+    return () => observer.disconnect();
+  }, [resizeSourceEditor, view]);
+
   function changeContent(content: string) {
     setEntry((current) => ({ ...current, content }));
     setDirty(true);
@@ -737,9 +770,10 @@ export default function Journal() {
   };
   const sourceEditor = (
     <textarea
+      ref={sourceEditorRef}
       className="source-editor"
       value={entry.content}
-      onChange={(event) => { changeContent(event.target.value); keepSourceCursorVisible(event.currentTarget); }}
+      onChange={(event) => { changeContent(event.target.value); resizeSourceEditor(event.currentTarget); keepSourceCursorVisible(event.currentTarget); }}
       onFocus={(event) => keepSourceCursorVisible(event.currentTarget)}
       onSelect={(event) => keepSourceCursorVisible(event.currentTarget)}
       placeholder="What’s on your mind?"
