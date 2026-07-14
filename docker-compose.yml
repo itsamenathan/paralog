@@ -8,6 +8,8 @@ services:
       PARALOG_PASSWORD: ${PARALOG_PASSWORD:?Set PARALOG_PASSWORD in your environment or .env file}
       PARALOG_AUTH_SECRET: ${PARALOG_AUTH_SECRET:-change-this-to-a-long-random-secret}
       PARALOG_VAPID_SUBJECT: ${PARALOG_VAPID_SUBJECT:-mailto:paralog@localhost}
+      PARALOG_GEOCODING_URL: ${PARALOG_GEOCODING_URL:-https://nominatim.openstreetmap.org/reverse}
+      PARALOG_GEOCODING_USER_AGENT: ${PARALOG_GEOCODING_USER_AGENT:-Paralog/0.1 (+https://github.com/itsamenathan/paralog)}
       IMMICH_API_URL: ${IMMICH_API_URL:-}
       IMMICH_API_KEY: ${IMMICH_API_KEY:-}
     volumes:

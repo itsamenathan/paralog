@@ -207,14 +207,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .date-navigation > button:hover { border-color: var(--line-strong); color: var(--ink); }
 .date-navigation h2 { margin: 0; font-size: clamp(31px, 3.3vw, 43px); line-height: 1.03; letter-spacing: -.045em; font-weight: 550; white-space: nowrap; }
 .header-actions { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
-.save-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; }
-.save-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); }
-.save-status.saved i { background: var(--success); }
-.save-status.saving i { background: var(--button); animation: pulse 1s infinite alternate; }
-.save-status.unsaved i { background: var(--warning); }
-.save-status.offline i { background: var(--warning); }
+.save-control { min-height: 39px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 650; white-space: nowrap; }
+.save-control:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-raised); color: var(--ink); }
+.save-control i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--line-strong); }
+.save-control.saved i { background: var(--success); }
+.save-control.saving { color: var(--ink); cursor: wait; }
+.save-control.saving i { background: var(--button); animation: pulse 1s infinite alternate; }
+.save-control.unsaved { border-color: color-mix(in srgb, var(--warning) 38%, var(--line)); color: var(--ink); }
+.save-control.unsaved i, .save-control.offline i { background: var(--warning); }
+.save-control:disabled { opacity: 1; }
 @keyframes pulse { to { opacity: .35; } }
-.upload-button, .save-button, .template-button, .text-button {
+.save-button, .template-button, .text-button {
   min-height: 39px;
   display: inline-flex;
   align-items: center;
@@ -224,14 +227,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   font-size: 12px;
   font-weight: 650;
 }
-.upload-button { border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
-.upload-button:hover { border-color: var(--line-strong); }
-.upload-button input { display: none; }
-.upload-button.disabled { opacity: .45; cursor: not-allowed; }
 .save-button { border: 1px solid var(--button); background: var(--button); color: var(--paper); }
 :root[data-theme="dark"] .save-button { color: #282a36; }
 .save-button:hover:not(:disabled) { background: var(--button-hover); }
 .save-button:disabled { opacity: .55; cursor: wait; }
+.location-feedback { width: fit-content; max-width: 100%; min-height: 30px; display: flex; flex-wrap: wrap; align-items: center; gap: 5px 9px; margin: 12px 0 0 auto; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 10px; line-height: 1.45; }
+.location-feedback strong { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); font-size: 10px; }
+.location-feedback.added { border-color: color-mix(in srgb, var(--success) 30%, var(--line)); background: color-mix(in srgb, var(--success) 7%, var(--surface)); }
+.location-feedback.added strong { color: var(--success); }
+.location-feedback.error { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); color: var(--danger); }
+.location-feedback a { padding-left: 8px; border-left: 1px solid var(--line); color: var(--muted); text-decoration: none; }
+.location-feedback a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 
 .photo-shelf { margin: 24px 0 0; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
 .photo-shelf-mobile { display: none; }
@@ -417,6 +423,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .live-editor-host .cm-selectionBackground, .live-editor-host .cm-content ::selection { background: color-mix(in srgb, var(--button) 30%, transparent) !important; }
 .live-editor-host .cm-cursor { border-left-color: var(--accent); }
 .live-editor-host .cm-placeholder { color: var(--muted); opacity: .62; font-style: normal; }
+.live-editor-host .cm-line.cm-live-metadata { padding-inline: 12px; border-inline: 1px solid color-mix(in srgb, var(--line) 72%, transparent); background: color-mix(in srgb, var(--surface) 62%, transparent); color: var(--muted); font: 11px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.live-editor-host .cm-line.cm-live-metadata-start { margin-top: 3px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); border-radius: 8px 8px 0 0; }
+.live-editor-host .cm-line.cm-live-metadata-end { margin-bottom: 15px; padding-bottom: 6px; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); border-radius: 0 0 8px 8px; }
+.live-editor-host .cm-line.cm-live-metadata.cm-activeLine { background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface)); color: var(--ink); }
+.live-editor-host .cm-live-metadata-delimiter { color: color-mix(in srgb, var(--muted) 55%, transparent); letter-spacing: .13em; }
+.live-editor-host .cm-live-metadata-key { color: color-mix(in srgb, var(--accent) 72%, var(--muted)); font-weight: 700; }
+.live-editor-host .cm-live-metadata-value { color: var(--muted); }
 .live-editor-host .cm-live-bold { font-weight: 800; }
 .live-editor-host .cm-live-italic { font-style: italic; }
 .live-editor-host .cm-live-strike { text-decoration: line-through; color: var(--muted); }
@@ -550,7 +563,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .journal-page { padding-inline: 32px; }
   .entry-header { align-items: flex-start; flex-direction: column; }
   .header-actions { width: 100%; justify-content: flex-end; }
-  .save-status { margin-right: auto; }
   .date-navigation h2 { white-space: normal; }
   .sidebar .weekdays, .sidebar .days { gap: 2px; }
   .sidebar .days button { width: 27px; height: 27px; }
@@ -600,8 +612,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .date-navigation h2 { font-size: clamp(27px, 8vw, 34px); line-height: 1.08; text-align: center; }
   .date-navigation .eyebrow { text-align: center; }
   .header-actions { gap: 8px; }
-  .save-status { font-size: 10px; }
-  .upload-button, .save-button { min-height: 37px; padding-inline: 11px; }
+  .save-control { min-height: 37px; padding-inline: 11px; font-size: 10px; }
+  .location-feedback { width: 100%; margin-top: 10px; }
   .photo-shelf { margin-top: 18px; padding: 16px; }
   .photo-shelf-desktop { display: none; }
   .photo-shelf-mobile { display: block; margin-top: 6px; }
@@ -664,8 +676,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 @media (max-width: 390px) {
   .mobile-bar > div button { min-width: 40px; height: 40px; padding-inline: 6px; }
   .header-actions { flex-wrap: wrap; }
-  .save-status { width: 100%; margin-bottom: -2px; }
-  .header-actions .upload-button, .header-actions .save-button { flex: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

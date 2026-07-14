@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { remarkHashtags } from "@/lib/remark-hashtags";
+import { markdownBody, setLocationFrontMatter } from "@/lib/front-matter";
 
 const LiveMarkdownEditor = dynamic(() => import("./live-markdown-editor"), {
   ssr: false,
@@ -26,6 +27,7 @@ type Settings = {
   showTagCloud: boolean;
   vimMode: boolean;
   autoSave: boolean;
+  autoLocation: boolean;
   notificationTimezone: string;
   notificationSchedules: NotificationSchedule[];
 };
@@ -76,6 +78,7 @@ const displayDate = (value: string) =>
     day: "numeric",
     year: "numeric",
   }).format(fromIso(value));
+const storedMarkdown = (content: string) => content.endsWith("\n") ? content : `${content}\n`;
 
 function keepSourceCursorVisible(textarea: HTMLTextAreaElement) {
   const viewport = window.visualViewport;
@@ -131,6 +134,14 @@ function pendingDates(month: string) {
     if (date.startsWith(`${month}-`) && cached?.content.trim()) dates.push(date);
   }
   return dates;
+}
+
+function currentPosition() {
+  return new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, {
+    enableHighAccuracy: false,
+    maximumAge: 10 * 60 * 1000,
+    timeout: 15_000,
+  }));
 }
 
 function Calendar({
@@ -485,6 +496,8 @@ export default function Journal() {
   const [online, setOnline] = useState(true);
   const [loading, setLoading] = useState(true);
   const [remoteUpdate, setRemoteUpdate] = useState<Entry | null>(null);
+  const [locationState, setLocationState] = useState<"idle" | "locating" | "looking-up" | "added" | "error">("idle");
+  const [locationMessage, setLocationMessage] = useState("");
   const selectedRef = useRef(selected);
   const entryRef = useRef(entry);
   const dirtyRef = useRef(dirty);
@@ -493,15 +506,18 @@ export default function Journal() {
   const photoSwipeStartRef = useRef<number | null>(null);
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const autoLocationAttemptedRef = useRef(new Set<string>());
   selectedRef.current = selected;
   entryRef.current = entry;
   dirtyRef.current = dirty;
   saveStateRef.current = saveState;
   const outline = useMemo(() => entryOutline(entry.content), [entry.content]);
   const writingStats = useMemo(() => {
-    const trimmed = entry.content.trim();
+    const body = markdownBody(entry.content);
+    const trimmed = body.trim();
     const words = trimmed ? trimmed.split(/\s+/).length : 0;
-    return { words, characters: entry.content.length, paragraphs: trimmed ? trimmed.split(/\n\s*\n/).length : 0, minutes: words ? Math.max(1, Math.ceil(words / 220)) : 0 };
+    return { words, characters: body.length, paragraphs: trimmed ? trimmed.split(/\n\s*\n/).length : 0, minutes: words ? Math.max(1, Math.ceil(words / 220)) : 0 };
   }, [entry.content]);
   const handleJumpHandled = useCallback(() => setOutlineJump(null), []);
 
@@ -514,7 +530,7 @@ export default function Journal() {
   }, [photos]);
 
   const applyRemoteEntry = useCallback((date: string, remote: Entry) => {
-    if (date !== selectedRef.current || remote.content === serverContentRef.current) return;
+    if (date !== selectedRef.current || (serverContentRef.current !== null && storedMarkdown(remote.content) === storedMarkdown(serverContentRef.current))) return;
     serverContentRef.current = remote.content;
     if (dirtyRef.current || ["saving", "unsaved", "offline"].includes(saveStateRef.current)) {
       setRemoteUpdate(remote);
@@ -571,6 +587,7 @@ export default function Journal() {
     setSavedDates((dates) => content.trim() ? [...new Set([...dates, date])] : dates);
 
     if (!navigator.onLine) return false;
+    serverContentRef.current = content;
     try {
       const response = await fetch(`/api/entries?date=${date}`, {
         method: "PUT",
@@ -580,7 +597,6 @@ export default function Journal() {
       if (!response.ok) throw new Error("Save failed");
       cacheEntry(date, draft, false);
       if (date === selected) {
-        serverContentRef.current = content;
         setEntry((value) => ({ ...value, exists: true }));
         setSaveState("saved");
         setDirty(false);
@@ -820,6 +836,8 @@ export default function Journal() {
     const controller = new AbortController();
     serverContentRef.current = null;
     setRemoteUpdate(null);
+    setLocationState("idle");
+    setLocationMessage("");
     setShowAllMemories(false);
     loadEntry(selected, controller.signal);
     return () => controller.abort();
@@ -894,9 +912,20 @@ export default function Journal() {
   }, [resizeSourceEditor, view]);
 
   function changeContent(content: string) {
+    const shouldAddLocation = Boolean(
+      settings?.autoLocation
+      && !entryRef.current.exists
+      && !entryRef.current.content.trim()
+      && content.trim()
+      && !autoLocationAttemptedRef.current.has(selectedRef.current),
+    );
     setEntry((current) => ({ ...current, content }));
     setDirty(true);
     setSaveState("unsaved");
+    if (shouldAddLocation) {
+      autoLocationAttemptedRef.current.add(selectedRef.current);
+      void addLocation(true);
+    }
   }
 
   function choose(date: string, updateHistory = true) {
@@ -938,6 +967,41 @@ export default function Journal() {
     const markdown = await uploadFile(file);
     if (!markdown) return;
     changeContent(`${entry.content}${entry.content && !entry.content.endsWith("\n") ? "\n" : ""}${markdown}\n`);
+  }
+
+  async function addLocation(automatic = false) {
+    autoLocationAttemptedRef.current.add(selectedRef.current);
+    if (!window.isSecureContext || !("geolocation" in navigator)) {
+      setLocationState("error");
+      setLocationMessage(`${automatic ? "Couldn’t add location automatically. " : ""}Location requires HTTPS and a browser with location access.`);
+      return;
+    }
+    if (!navigator.onLine) {
+      setLocationState("error");
+      setLocationMessage(`${automatic ? "Couldn’t add location automatically. " : ""}Connect to the internet to look up your location.`);
+      return;
+    }
+    setLocationState("locating");
+    setLocationMessage(automatic ? "Adding location to this new entry…" : "Requesting your device location…");
+    try {
+      const position = await currentPosition();
+      setLocationState("looking-up");
+      setLocationMessage("Finding the nearest city…");
+      const query = new URLSearchParams({ latitude: String(position.coords.latitude), longitude: String(position.coords.longitude) });
+      const response = await fetch(`/api/location?${query}`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Location lookup failed.");
+      changeContent(setLocationFrontMatter(entryRef.current.content, result.label));
+      setLocationState("added");
+      setLocationMessage(result.label);
+    } catch (error) {
+      const geolocationError = error as GeolocationPositionError;
+      const message = geolocationError.code === 1
+        ? "Location permission was denied. Allow it in your browser’s site settings and try again."
+        : error instanceof Error ? error.message : "Location lookup failed.";
+      setLocationState("error");
+      setLocationMessage(`${automatic ? "Couldn’t add location automatically. " : ""}${message}`);
+    }
   }
 
   async function openRevisions() {
@@ -1010,7 +1074,7 @@ export default function Journal() {
     />
   );
   const rendered = (
-    <article className="preview"><ReactMarkdown remarkPlugins={[remarkHashtags]}>{entry.content || "*Nothing here yet.*"}</ReactMarkdown></article>
+    <article className="preview"><ReactMarkdown remarkPlugins={[remarkHashtags]}>{markdownBody(entry.content) || "*Nothing here yet.*"}</ReactMarkdown></article>
   );
 
   return (
@@ -1050,11 +1114,15 @@ export default function Journal() {
             <button type="button" onClick={() => moveDay(1)} aria-label="Next day"><span aria-hidden="true">→</span></button>
           </div>
           <div className="header-actions">
-            <span className={`save-status ${saveState}`} aria-live="polite"><i />{statusCopy[saveState]}</span>
-            <label className={`upload-button ${!online ? "disabled" : ""}`}>＋ Attach<input type="file" disabled={!online} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])} /></label>
-            <button className="save-button" type="button" title="Save entry (Ctrl+S or Cmd+S)" onClick={() => persistEntry(selected, entry.content, entry)} disabled={saveState === "saving"}>{saveState === "saving" ? "Saving…" : "Save now"}</button>
+            <button className={`save-control ${saveState}`} type="button" title="Save entry (Ctrl+S or Cmd+S)" aria-live="polite" onClick={() => persistEntry(selected, entry.content, entry)} disabled={saveState === "saving"}><i aria-hidden="true" /><span>{statusCopy[saveState]}</span></button>
           </div>
         </header>
+
+        {locationMessage && <div className={`location-feedback ${locationState}`} role="status">
+          {locationState === "added" && <strong><span aria-hidden="true">✓</span> Location added</strong>}
+          <span>{locationMessage}</span>
+          {locationState === "added" && <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>}
+        </div>}
 
         <div className="entry-workspace">
         <div className="entry-editor-column">
@@ -1070,9 +1138,12 @@ export default function Journal() {
           <div className="tools-menu-wrap" ref={toolsMenuRef}>
             <button className={`tools-trigger ${showTools ? "active" : ""}`} type="button" aria-haspopup="menu" aria-expanded={showTools} onClick={() => setShowTools((value) => !value)}>Tools <span aria-hidden="true">⌄</span></button>
             {showTools && <div className="tools-menu" role="menu">
+              <button type="button" role="menuitem" disabled={!online || locationState === "locating" || locationState === "looking-up"} onClick={() => { setShowTools(false); void addLocation(); }}><b>{locationState === "locating" ? "Locating…" : locationState === "looking-up" ? "Finding city…" : "Add location"}</b><small>Add city, state, and country to metadata</small></button>
+              <button type="button" role="menuitem" disabled={!online} onClick={() => attachmentInputRef.current?.click()}><b>Attach file</b><small>{online ? "Add a photo or document" : "Available when back online"}</small></button>
               <button type="button" role="menuitem" disabled={outline.length === 0} onClick={() => { setShowOutline((value) => !value); setShowStats(false); setShowTools(false); }}><b>Outline</b><small>{outline.length ? `${outline.length} ${outline.length === 1 ? "heading" : "headings"}` : "No headings yet"}</small></button>
               <button type="button" role="menuitem" onClick={() => { setShowTools(false); openRevisions(); }}><b>Version history</b><small>Review and restore earlier saves</small></button>
             </div>}
+            <input ref={attachmentInputRef} className="editor-file-input" type="file" disabled={!online} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) { setShowTools(false); void upload(file); } }} />
           </div>
         </div>
         {showOutline && <nav className="editor-popover outline-panel" aria-label="Entry outline">
@@ -1116,6 +1187,7 @@ export default function Journal() {
             <label>New entry template<small>Use any Markdown you want as a starting point.</small><textarea value={settings.template} onChange={(event) => setSettings({ ...settings, template: event.target.value })} /></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.showTagCloud} onChange={(event) => setSettings({ ...settings, showTagCloud: event.target.checked })} /><span><b>Show tag cloud</b><small>Collect hashtags from your entries in the desktop sidebar and mobile calendar.</small></span></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.autoSave} onChange={(event) => setSettings({ ...settings, autoSave: event.target.checked })} /><span><b>Automatically save entries</b><small>Save after you pause typing. You can always save immediately with Ctrl+S or Cmd+S.</small></span></label>
+            <label className="toggle-setting"><input type="checkbox" checked={settings.autoLocation} onChange={(event) => setSettings({ ...settings, autoLocation: event.target.checked })} /><span><b>Add location to new entries</b><small>When you begin writing on an empty day, request your location and add the nearest city, state, and country to its metadata.</small></span></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.vimMode} onChange={(event) => setSettings({ ...settings, vimMode: event.target.checked })} /><span><b>Vim keybindings</b><small>Enable Normal, Insert, and Visual modes in the Live Preview editor on desktop. Mobile always uses standard editing.</small></span></label>
             <NotificationPreferences settings={settings} onChange={setSettings} />
             <div className="settings-actions"><button className="text-button" type="button" onClick={signOut}>Sign out</button><button className="save-button" type="button" onClick={persistSettings} disabled={!online}>Save settings</button></div>

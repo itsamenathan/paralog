@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { diffLines } from "diff";
+import { markdownBody } from "@/lib/front-matter";
 
 export const dataDir = process.env.PARALOG_DATA_DIR || path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "journal.db");
@@ -26,8 +27,8 @@ function parts(date: string) {
 }
 
 function setting(key: string, fallback: string) { return (db().prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value?: string } | undefined)?.value || fallback; }
-export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", ""), showTagCloud: setting("showTagCloud", "true") !== "false", vimMode: setting("vimMode", "false") === "true", autoSave: setting("autoSave", "true") !== "false" }; }
-export function updateSettings(values: { saveFormat?: string; template?: string; showTagCloud?: boolean; vimMode?: boolean; autoSave?: boolean }) {
+export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", ""), showTagCloud: setting("showTagCloud", "true") !== "false", vimMode: setting("vimMode", "false") === "true", autoSave: setting("autoSave", "true") !== "false", autoLocation: setting("autoLocation", "false") === "true" }; }
+export function updateSettings(values: { saveFormat?: string; template?: string; showTagCloud?: boolean; vimMode?: boolean; autoSave?: boolean; autoLocation?: boolean }) {
   const current = settings();
   const saveFormat = values.saveFormat?.trim() || current.saveFormat;
   if (!saveFormat.includes("YYYY") || !saveFormat.includes("MM") || !saveFormat.includes("DD") || saveFormat.includes("..") || path.isAbsolute(saveFormat)) throw new Error("Save format must be a relative path containing YYYY, MM, and DD.");
@@ -35,12 +36,14 @@ export function updateSettings(values: { saveFormat?: string; template?: string;
   const showTagCloud = values.showTagCloud ?? current.showTagCloud;
   const vimMode = values.vimMode ?? current.vimMode;
   const autoSave = values.autoSave ?? current.autoSave;
+  const autoLocation = values.autoLocation ?? current.autoLocation;
   const insert = db().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
   insert.run("saveFormat", saveFormat);
   insert.run("template", template);
   insert.run("showTagCloud", String(showTagCloud));
   insert.run("vimMode", String(vimMode));
   insert.run("autoSave", String(autoSave));
+  insert.run("autoLocation", String(autoLocation));
   return settings();
 }
 
@@ -79,14 +82,15 @@ export function getEntry(date: string) {
   const memories = previousYears.flatMap((value) => {
     if (!fs.existsSync(value.path)) return [];
     const memory = fs.readFileSync(value.path, "utf8");
-    const excerpt = memory
+    const body = markdownBody(memory);
+    const excerpt = body
       .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
       .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
       .replace(/^[#>*_`~-]+/gm, "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 180);
-    return [{ date: value.date, excerpt, words: memory.trim() ? memory.trim().split(/\s+/).length : 0 }];
+    return [{ date: value.date, excerpt, words: body.trim() ? body.trim().split(/\s+/).length : 0 }];
   });
   return { date, content, exists, previousYears: memories.map((value) => value.date), memories, template: settings().template };
 }
@@ -135,7 +139,7 @@ export function revisionsForDate(date: string) {
     return {
       id: revision.id,
       createdAt: revision.createdAt,
-      words: revision.content.trim() ? revision.content.trim().split(/\s+/).length : 0,
+      words: markdownBody(revision.content).trim() ? markdownBody(revision.content).trim().split(/\s+/).length : 0,
       diff,
     };
   });
@@ -178,7 +182,7 @@ export function revisionForDate(date: string, id: number) {
 }
 
 function entryTags(content: string) {
-  const searchable = withoutFencedCode(content)
+  const searchable = withoutFencedCode(markdownBody(content))
     .replace(/`[^`\n]*`/g, " ")
     .replace(/!?\[[^\]]*\]\([^)]+\)/g, " ")
     .replace(/https?:\/\/\S+/g, " ");
@@ -209,7 +213,7 @@ export function tags() {
 }
 
 function excerpt(content: string) {
-  return content
+  return markdownBody(content)
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/^[#>*_`~-]+/gm, "")
@@ -227,7 +231,8 @@ export function entriesTagged(tag: string) {
     if (!fs.existsSync(row.path)) return [];
     const content = fs.readFileSync(row.path, "utf8");
     if (!entryTags(content).has(key)) return [];
-    return [{ date: row.date, excerpt: excerpt(content), words: content.trim() ? content.trim().split(/\s+/).length : 0 }];
+    const body = markdownBody(content);
+    return [{ date: row.date, excerpt: excerpt(content), words: body.trim() ? body.trim().split(/\s+/).length : 0 }];
   });
 }
 

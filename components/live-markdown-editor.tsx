@@ -50,6 +50,15 @@ class BulletWidget extends WidgetType {
 function liveDecorations(view: EditorView): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+  let metadataEndLine = 0;
+  if (view.state.doc.line(1).text.trim() === "---") {
+    for (let lineNumber = 2; lineNumber <= view.state.doc.lines; lineNumber += 1) {
+      if (view.state.doc.line(lineNumber).text.trim() === "---") {
+        metadataEndLine = lineNumber;
+        break;
+      }
+    }
+  }
   const fencedLines = new Set<number>();
   let fence: { character: string; length: number } | null = null;
   for (let lineNumber = 1; lineNumber <= view.state.doc.lines; lineNumber += 1) {
@@ -76,6 +85,31 @@ function liveDecorations(view: EditorView): DecorationSet {
       const line = view.state.doc.lineAt(position);
       const text = line.text;
       const active = line.number === activeLine;
+
+      if (metadataEndLine && line.number <= metadataEndLine) {
+        const positionClass = line.number === 1
+          ? " cm-live-metadata-start"
+          : line.number === metadataEndLine
+            ? " cm-live-metadata-end"
+            : "";
+        decorations.push(Decoration.line({ class: `cm-live-metadata${positionClass}` }).range(line.from));
+
+        if (line.number === 1 || line.number === metadataEndLine) {
+          addMark(line.from, line.to, "cm-live-metadata-delimiter");
+        } else {
+          const field = text.match(/^(\s*)([\w-]+)(\s*:)(.*)$/);
+          if (field) {
+            const keyFrom = line.from + field[1].length;
+            const separatorEnd = keyFrom + field[2].length + field[3].length;
+            addMark(keyFrom, keyFrom + field[2].length, "cm-live-metadata-key");
+            addMark(separatorEnd, line.to, "cm-live-metadata-value");
+          }
+        }
+
+        if (line.to >= to) break;
+        position = line.to + 1;
+        continue;
+      }
 
       if (fencedLines.has(line.number)) {
         decorations.push(Decoration.line({ class: "cm-live-codeblock" }).range(line.from));

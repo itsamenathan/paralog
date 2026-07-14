@@ -30,6 +30,18 @@ The `./data` directory is mounted into the container at `/data`, holding both `j
 
 Notification signing keys are generated automatically and retained in `journal.db`. Optionally set `PARALOG_VAPID_SUBJECT` to a `mailto:` address you monitor; it defaults to `mailto:paralog@localhost`.
 
+## Entry metadata and location
+
+The **Add location** action requests the device location, looks up the nearest city, and adds or updates YAML front matter without changing the journal prose:
+
+```yaml
+---
+location: "Los Angeles, California, United States"
+---
+```
+
+Only the city, state, and country are written to Markdown. The opt-in **Add location to new entries** setting can run the same lookup when writing begins on an empty day, without creating entries merely by browsing dates. Reverse geocoding defaults to OpenStreetMap Nominatim; coordinates are sent to that service during a lookup but are not stored by Paralog. The UI displays OpenStreetMap attribution. Set `PARALOG_GEOCODING_URL` to a compatible reverse endpoint to use another or self-hosted provider, and identify this installation with `PARALOG_GEOCODING_USER_AGENT`.
+
 Entries are written as `YYYY/MM-MMMM/YYYY-MM-DD-dddd.md`, for example `2026/07-July/2026-07-11-Saturday.md`.
 
 ## Immich photo previews
