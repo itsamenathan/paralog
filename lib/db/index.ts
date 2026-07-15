@@ -37,13 +37,26 @@ export function db() {
   return state().database;
 }
 
+function migrationCount(sqlite: Database.Database) {
+  const table = sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'").get();
+  if (!table) return 0;
+  return (sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get() as { count: number }).count;
+}
+
 export function migrateDatabase() {
   const current = state();
   if (current.migrated) return;
   const migrationsFolder = path.join(process.cwd(), "drizzle");
   try {
+    const before = migrationCount(current.sqlite);
     migrate(current.database, { migrationsFolder });
+    const applied = migrationCount(current.sqlite) - before;
     current.migrated = true;
+    if (applied > 0) {
+      console.info(`Paralog database: applied ${applied} migration${applied === 1 ? "" : "s"} to ${dbPath}.`);
+    } else {
+      console.info(`Paralog database: schema is up to date at ${dbPath}.`);
+    }
   } catch (error) {
     console.error(`Failed to migrate Paralog database at ${dbPath}.`, error);
     throw error;
