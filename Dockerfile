@@ -13,6 +13,7 @@ RUN npm run build
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 ENV PARALOG_DATA_DIR=/data
 RUN groupadd --gid 1001 nodejs && useradd --uid 1001 --gid nodejs --create-home nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
