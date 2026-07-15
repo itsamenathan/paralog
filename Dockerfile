@@ -18,6 +18,7 @@ RUN groupadd --gid 1001 nodejs && useradd --uid 1001 --gid nodejs --create-home 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 RUN mkdir /data && chown nextjs:nodejs /data
 USER nextjs
 EXPOSE 3000

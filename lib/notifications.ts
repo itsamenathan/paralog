@@ -1,9 +1,9 @@
-import Database from "better-sqlite3";
+import { and, count, eq } from "drizzle-orm";
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import webpush, { type PushSubscription } from "web-push";
-import { dataDir, getEntry } from "@/lib/journal";
+import { db } from "@/lib/db";
+import { notificationConfig, notificationDeliveries, notificationSuppressions, pushSubscriptions } from "@/lib/db/schema";
+import { getEntry } from "@/lib/journal";
 
 export type NotificationRule = "always" | "empty";
 export type NotificationSchedule = {
@@ -25,47 +25,12 @@ const DEFAULT_SCHEDULE: NotificationSchedule = {
   title: "Time to journal",
   body: "Add a thought to today’s entry.",
 };
-const dbPath = path.join(dataDir, "journal.db");
-let database: Database.Database | undefined;
-
-function db() {
-  if (!database) {
-    fs.mkdirSync(dataDir, { recursive: true });
-    database = new Database(dbPath);
-    database.pragma("journal_mode = WAL");
-    database.exec(`
-      CREATE TABLE IF NOT EXISTS notification_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS push_subscriptions (
-        endpoint TEXT PRIMARY KEY,
-        p256dh TEXT NOT NULL,
-        auth TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS notification_deliveries (
-        schedule_id TEXT NOT NULL,
-        local_date TEXT NOT NULL,
-        endpoint TEXT NOT NULL,
-        sent_at TEXT NOT NULL,
-        PRIMARY KEY (schedule_id, local_date, endpoint)
-      );
-      CREATE TABLE IF NOT EXISTS notification_suppressions (
-        schedule_id TEXT NOT NULL,
-        local_date TEXT NOT NULL,
-        checked_at TEXT NOT NULL,
-        PRIMARY KEY (schedule_id, local_date)
-      );
-    `);
-  }
-  return database;
-}
-
 function config(key: string) {
-  return (db().prepare("SELECT value FROM notification_config WHERE key = ?").get(key) as { value: string } | undefined)?.value;
+  return db().select({ value: notificationConfig.value }).from(notificationConfig).where(eq(notificationConfig.key, key)).get()?.value;
 }
 
 function setConfig(key: string, value: string) {
-  db().prepare("INSERT INTO notification_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+  db().insert(notificationConfig).values({ key, value }).onConflictDoUpdate({ target: notificationConfig.key, set: { value } }).run();
 }
 
 function validTimezone(value: string) {
@@ -125,11 +90,10 @@ function vapidKeys() {
     const generated = webpush.generateVAPIDKeys();
     publicKey = generated.publicKey;
     privateKey = generated.privateKey;
-    const transaction = db().transaction(() => {
-      setConfig("vapid_public_key", publicKey!);
-      setConfig("vapid_private_key", privateKey!);
+    db().transaction((tx) => {
+      tx.insert(notificationConfig).values({ key: "vapid_public_key", value: publicKey! }).onConflictDoUpdate({ target: notificationConfig.key, set: { value: publicKey! } }).run();
+      tx.insert(notificationConfig).values({ key: "vapid_private_key", value: privateKey! }).onConflictDoUpdate({ target: notificationConfig.key, set: { value: privateKey! } }).run();
     });
-    transaction();
   }
   return { publicKey, privateKey };
 }
@@ -142,7 +106,7 @@ function configureWebPush() {
 
 export function notificationBootstrap() {
   const { publicKey } = configureWebPush();
-  const subscriptions = (db().prepare("SELECT COUNT(*) AS count FROM push_subscriptions").get() as { count: number }).count;
+  const subscriptions = db().select({ count: count() }).from(pushSubscriptions).get()!.count;
   return { publicKey, subscriptions };
 }
 
@@ -152,20 +116,27 @@ export function registerPushSubscription(value: unknown) {
   if (typeof subscription.endpoint !== "string" || !subscription.endpoint.startsWith("https://") || subscription.endpoint.length > 2048) throw new Error("Invalid push endpoint.");
   if (typeof subscription.keys?.p256dh !== "string" || typeof subscription.keys.auth !== "string") throw new Error("Invalid push subscription keys.");
   const now = new Date().toISOString();
-  db().prepare(`INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, updated_at = excluded.updated_at`)
-    .run(subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, now, now);
+  db().insert(pushSubscriptions).values({
+    endpoint: subscription.endpoint,
+    p256dh: subscription.keys.p256dh,
+    auth: subscription.keys.auth,
+    createdAt: now,
+    updatedAt: now,
+  }).onConflictDoUpdate({
+    target: pushSubscriptions.endpoint,
+    set: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth, updatedAt: now },
+  }).run();
   return { subscribed: true };
 }
 
 export function removePushSubscription(endpoint: unknown) {
   if (typeof endpoint !== "string") throw new Error("A push endpoint is required.");
-  db().prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").run(endpoint);
+  db().delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint)).run();
   return { subscribed: false };
 }
 
 function subscriptionForEndpoint(endpoint: string): PushSubscription | null {
-  const row = db().prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE endpoint = ?").get(endpoint) as { endpoint: string; p256dh: string; auth: string } | undefined;
+  const row = db().select({ endpoint: pushSubscriptions.endpoint, p256dh: pushSubscriptions.p256dh, auth: pushSubscriptions.auth }).from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint)).get();
   return row ? { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } } : null;
 }
 
@@ -214,17 +185,17 @@ function due(schedule: NotificationSchedule, clock: ReturnType<typeof localClock
 export async function runNotificationScheduler(now = new Date()) {
   const { notificationTimezone, notificationSchedules } = notificationSettings();
   const clock = localClock(now, notificationTimezone);
-  const subscriptions = db().prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions").all() as { endpoint: string; p256dh: string; auth: string }[];
+  const subscriptions = db().select({ endpoint: pushSubscriptions.endpoint, p256dh: pushSubscriptions.p256dh, auth: pushSubscriptions.auth }).from(pushSubscriptions).all();
   for (const schedule of notificationSchedules) {
     if (!due(schedule, clock)) continue;
-    const suppressed = db().prepare("SELECT 1 FROM notification_suppressions WHERE schedule_id = ? AND local_date = ?").get(schedule.id, clock.date);
+    const suppressed = db().select({ scheduleId: notificationSuppressions.scheduleId }).from(notificationSuppressions).where(and(eq(notificationSuppressions.scheduleId, schedule.id), eq(notificationSuppressions.localDate, clock.date))).get();
     if (suppressed) continue;
     if (schedule.rule === "empty" && getEntry(clock.date).content.trim()) {
-      db().prepare("INSERT OR IGNORE INTO notification_suppressions (schedule_id, local_date, checked_at) VALUES (?, ?, ?)").run(schedule.id, clock.date, now.toISOString());
+      db().insert(notificationSuppressions).values({ scheduleId: schedule.id, localDate: clock.date, checkedAt: now.toISOString() }).onConflictDoNothing().run();
       continue;
     }
     for (const row of subscriptions) {
-      const delivered = db().prepare("SELECT 1 FROM notification_deliveries WHERE schedule_id = ? AND local_date = ? AND endpoint = ?").get(schedule.id, clock.date, row.endpoint);
+      const delivered = db().select({ scheduleId: notificationDeliveries.scheduleId }).from(notificationDeliveries).where(and(eq(notificationDeliveries.scheduleId, schedule.id), eq(notificationDeliveries.localDate, clock.date), eq(notificationDeliveries.endpoint, row.endpoint))).get();
       if (delivered) continue;
       try {
         await send({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } }, {
@@ -233,10 +204,10 @@ export async function runNotificationScheduler(now = new Date()) {
           url: `/?date=${clock.date}`,
           tag: `paralog-${schedule.id}-${clock.date}`,
         });
-        db().prepare("INSERT OR IGNORE INTO notification_deliveries (schedule_id, local_date, endpoint, sent_at) VALUES (?, ?, ?, ?)").run(schedule.id, clock.date, row.endpoint, new Date().toISOString());
+        db().insert(notificationDeliveries).values({ scheduleId: schedule.id, localDate: clock.date, endpoint: row.endpoint, sentAt: new Date().toISOString() }).onConflictDoNothing().run();
       } catch (error) {
         const statusCode = (error as { statusCode?: number }).statusCode;
-        if (statusCode === 404 || statusCode === 410) db().prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").run(row.endpoint);
+        if (statusCode === 404 || statusCode === 410) db().delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, row.endpoint)).run();
         else console.error("Paralog reminder delivery failed", error);
       }
     }

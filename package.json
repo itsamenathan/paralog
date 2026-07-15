@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check",
+    "test:migrations": "node --test scripts/test-migrations.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "6.5.0",
@@ -13,6 +16,7 @@
     "better-sqlite3": "12.11.1",
     "codemirror": "6.0.2",
     "diff": "9.0.0",
+    "drizzle-orm": "^0.45.2",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7",
@@ -25,6 +29,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@types/web-push": "^3.6.4",
+    "drizzle-kit": "^0.31.10",
     "typescript": "6.0.3"
   }
 }

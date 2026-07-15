@@ -1,24 +1,14 @@
-import Database from "better-sqlite3";
+import { and, desc, eq, like, lt, notInArray } from "drizzle-orm";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { diffLines } from "diff";
+import { dataDir, db } from "@/lib/db";
+import { entries, revisions, settingsTable } from "@/lib/db/schema";
 import { markdownBody } from "@/lib/front-matter";
 
-export const dataDir = process.env.PARALOG_DATA_DIR || path.join(process.cwd(), "data");
-const dbPath = path.join(dataDir, "journal.db");
+export { dataDir } from "@/lib/db";
 const defaultFormat = "YYYY/MM-MMMM/YYYY-MM-DD-dddd.md";
-let database: Database.Database | undefined;
-
-function db() {
-  if (!database) {
-    fs.mkdirSync(dataDir, { recursive: true });
-    database = new Database(dbPath);
-    database.pragma("journal_mode = WAL");
-    database.exec("CREATE TABLE IF NOT EXISTS entries (date TEXT PRIMARY KEY, path TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS revisions_date_created ON revisions(date, created_at DESC)");
-  }
-  return database;
-}
 
 function parts(date: string) {
   const [year, month, day] = date.split("-").map(Number);
@@ -26,7 +16,7 @@ function parts(date: string) {
   return { YYYY: String(year), YY: String(year).slice(-2), MM: String(month).padStart(2, "0"), M: String(month), DD: String(day).padStart(2, "0"), D: String(day), MMMM: new Intl.DateTimeFormat("en-US", { month: "long" }).format(local), MMM: new Intl.DateTimeFormat("en-US", { month: "short" }).format(local), dddd: new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(local), ddd: new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(local) };
 }
 
-function setting(key: string, fallback: string) { return (db().prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value?: string } | undefined)?.value || fallback; }
+function setting(key: string, fallback: string) { return db().select({ value: settingsTable.value }).from(settingsTable).where(eq(settingsTable.key, key)).get()?.value || fallback; }
 export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", ""), showTagCloud: setting("showTagCloud", "true") !== "false", vimMode: setting("vimMode", "false") === "true", autoSave: setting("autoSave", "true") !== "false", autoLocation: setting("autoLocation", "false") === "true" }; }
 export function updateSettings(values: { saveFormat?: string; template?: string; showTagCloud?: boolean; vimMode?: boolean; autoSave?: boolean; autoLocation?: boolean }) {
   const current = settings();
@@ -37,13 +27,13 @@ export function updateSettings(values: { saveFormat?: string; template?: string;
   const vimMode = values.vimMode ?? current.vimMode;
   const autoSave = values.autoSave ?? current.autoSave;
   const autoLocation = values.autoLocation ?? current.autoLocation;
-  const insert = db().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
-  insert.run("saveFormat", saveFormat);
-  insert.run("template", template);
-  insert.run("showTagCloud", String(showTagCloud));
-  insert.run("vimMode", String(vimMode));
-  insert.run("autoSave", String(autoSave));
-  insert.run("autoLocation", String(autoLocation));
+  const upsert = (key: string, value: string) => db().insert(settingsTable).values({ key, value }).onConflictDoUpdate({ target: settingsTable.key, set: { value } }).run();
+  upsert("saveFormat", saveFormat);
+  upsert("template", template);
+  upsert("showTagCloud", String(showTagCloud));
+  upsert("vimMode", String(vimMode));
+  upsert("autoSave", String(autoSave));
+  upsert("autoLocation", String(autoLocation));
   return settings();
 }
 
@@ -57,7 +47,6 @@ export function entryPath(date: string) {
 }
 
 function discoverEntries() {
-  const index = db().prepare("INSERT INTO entries (date, path, updated_at) VALUES (?, ?, ?) ON CONFLICT(date) DO UPDATE SET path = excluded.path, updated_at = excluded.updated_at");
   const walk = (directory: string) => {
     for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
       if (item.name === "attachments" || item.name === "journal.db" || item.name.startsWith("journal.db-")) continue;
@@ -65,7 +54,13 @@ function discoverEntries() {
       if (item.isDirectory()) walk(file);
       else if (item.isFile() && item.name.endsWith(".md")) {
         const date = item.name.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
-        if (date) index.run(date, file, fs.statSync(file).mtime.toISOString());
+        if (date) {
+          const updatedAt = fs.statSync(file).mtime.toISOString();
+          db().insert(entries).values({ date, path: file, updatedAt }).onConflictDoUpdate({
+            target: entries.date,
+            set: { path: file, updatedAt },
+          }).run();
+        }
       }
     }
   };
@@ -74,11 +69,13 @@ function discoverEntries() {
 
 export function getEntry(date: string) {
   discoverEntries();
-  const row = db().prepare("SELECT path FROM entries WHERE date = ?").get(date) as { path: string } | undefined;
+  const row = db().select({ path: entries.path }).from(entries).where(eq(entries.date, date)).get();
   const filePath = row?.path || entryPath(date);
   const exists = fs.existsSync(filePath);
   const content = exists ? fs.readFileSync(filePath, "utf8") : "";
-  const previousYears = db().prepare("SELECT date, path FROM entries WHERE substr(date, 6) = substr(?, 6) AND date < ? ORDER BY date DESC").all(date, date) as { date: string; path: string }[];
+  const previousYears = db().select({ date: entries.date, path: entries.path }).from(entries)
+    .where(and(like(entries.date, `____-${date.slice(5)}`), lt(entries.date, date)))
+    .orderBy(desc(entries.date)).all();
   const memories = previousYears.flatMap((value) => {
     if (!fs.existsSync(value.path)) return [];
     const memory = fs.readFileSync(value.path, "utf8");
@@ -101,17 +98,19 @@ export function saveEntry(date: string, content: string) {
   if (fs.existsSync(filePath)) {
     const previous = fs.readFileSync(filePath, "utf8");
     if (previous !== content && previous !== `${content}\n`) {
-      const latest = db().prepare("SELECT content FROM revisions WHERE date = ? ORDER BY id DESC LIMIT 1").get(date) as { content: string } | undefined;
-      if (latest?.content !== previous) db().prepare("INSERT INTO revisions (date, content, created_at) VALUES (?, ?, ?)").run(date, previous, new Date().toISOString());
-      db().prepare("DELETE FROM revisions WHERE date = ? AND id NOT IN (SELECT id FROM revisions WHERE date = ? ORDER BY id DESC LIMIT 50)").run(date, date);
+      const latest = db().select({ content: revisions.content }).from(revisions).where(eq(revisions.date, date)).orderBy(desc(revisions.id)).limit(1).get();
+      if (latest?.content !== previous) db().insert(revisions).values({ date, content: previous, createdAt: new Date().toISOString() }).run();
+      const retained = db().select({ id: revisions.id }).from(revisions).where(eq(revisions.date, date)).orderBy(desc(revisions.id)).limit(50);
+      db().delete(revisions).where(and(eq(revisions.date, date), notInArray(revisions.id, retained))).run();
     }
   }
   fs.writeFileSync(filePath, content.endsWith("\n") ? content : `${content}\n`, "utf8");
-  db().prepare("INSERT INTO entries (date, path, updated_at) VALUES (?, ?, ?) ON CONFLICT(date) DO UPDATE SET path = excluded.path, updated_at = excluded.updated_at").run(date, filePath, new Date().toISOString());
+  const updatedAt = new Date().toISOString();
+  db().insert(entries).values({ date, path: filePath, updatedAt }).onConflictDoUpdate({ target: entries.date, set: { path: filePath, updatedAt } }).run();
   return { date, saved: true };
 }
 
-export function entriesForMonth(month: string) { discoverEntries(); return (db().prepare("SELECT date FROM entries WHERE date LIKE ? ORDER BY date").all(`${month}-%`) as { date: string }[]).map((row) => row.date); }
+export function entriesForMonth(month: string) { discoverEntries(); return db().select({ date: entries.date }).from(entries).where(like(entries.date, `${month}-%`)).orderBy(entries.date).all().map((row) => row.date); }
 
 function withoutFencedCode(content: string) {
   let fence: { character: string; length: number } | null = null;
@@ -130,10 +129,10 @@ function withoutFencedCode(content: string) {
 }
 
 export function revisionsForDate(date: string) {
-  const revisions = db().prepare("SELECT id, content, created_at AS createdAt FROM revisions WHERE date = ? ORDER BY id DESC LIMIT 50").all(date) as { id: number; content: string; createdAt: string }[];
+  const storedRevisions = db().select({ id: revisions.id, content: revisions.content, createdAt: revisions.createdAt }).from(revisions).where(eq(revisions.date, date)).orderBy(desc(revisions.id)).limit(50).all();
   const currentPath = entryPath(date);
   let nextContent = fs.existsSync(currentPath) ? fs.readFileSync(currentPath, "utf8") : "";
-  return revisions.map((revision) => {
+  return storedRevisions.map((revision) => {
     const diff = revisionChanges(revision.content, nextContent);
     nextContent = revision.content;
     return {
@@ -178,7 +177,7 @@ function revisionChanges(before: string, after: string) {
 }
 
 export function revisionForDate(date: string, id: number) {
-  return db().prepare("SELECT id, content, created_at AS createdAt FROM revisions WHERE date = ? AND id = ?").get(date, id) as { id: number; content: string; createdAt: string } | undefined;
+  return db().select({ id: revisions.id, content: revisions.content, createdAt: revisions.createdAt }).from(revisions).where(and(eq(revisions.date, date), eq(revisions.id, id))).get();
 }
 
 function entryTags(content: string) {
@@ -197,7 +196,7 @@ function entryTags(content: string) {
 
 export function tags() {
   discoverEntries();
-  const rows = db().prepare("SELECT date, path FROM entries ORDER BY date DESC").all() as { date: string; path: string }[];
+  const rows = db().select({ date: entries.date, path: entries.path }).from(entries).orderBy(desc(entries.date)).all();
   const cloud = new Map<string, { name: string; dates: string[] }>();
   for (const row of rows) {
     if (!fs.existsSync(row.path)) continue;
@@ -226,7 +225,7 @@ export function entriesTagged(tag: string) {
   const key = tag.normalize("NFC").toLocaleLowerCase();
   if (!/^[\p{L}\p{N}][\p{L}\p{N}_-]*$/u.test(key)) return [];
   discoverEntries();
-  const rows = db().prepare("SELECT date, path FROM entries ORDER BY date DESC").all() as { date: string; path: string }[];
+  const rows = db().select({ date: entries.date, path: entries.path }).from(entries).orderBy(desc(entries.date)).all();
   return rows.flatMap((row) => {
     if (!fs.existsSync(row.path)) return [];
     const content = fs.readFileSync(row.path, "utf8");

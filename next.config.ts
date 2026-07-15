@@ -8,6 +8,9 @@ const allowedDevOrigins = process.env.PARALOG_ALLOWED_DEV_ORIGINS
 const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["better-sqlite3", "web-push"],
+  outputFileTracingIncludes: {
+    "/*": ["./drizzle/**/*"],
+  },
   allowedDevOrigins,
 };
 

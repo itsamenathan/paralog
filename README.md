@@ -28,6 +28,8 @@ docker compose up --build -d
 
 The `./data` directory is mounted into the container at `/data`, holding both `journal.db`, uploads, settings, and Markdown entries. Back up this directory to back up Paralog. Set `PARALOG_PASSWORD` and a long random `PARALOG_AUTH_SECRET` in a `.env` file before launching Docker.
 
+Pending database migrations run automatically before Paralog begins serving requests, including after a Docker image upgrade. Migration files are bundled into the production image while the database remains on the persistent `/data` volume. When changing the database schema during development, run `npm run db:generate` and commit the generated files under `drizzle/`; use `npm run db:check` to validate the migration history.
+
 Notification signing keys are generated automatically and retained in `journal.db`. Optionally set `PARALOG_VAPID_SUBJECT` to a `mailto:` address you monitor; it defaults to `mailto:paralog@localhost`.
 
 ## Entry metadata and location
