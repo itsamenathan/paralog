@@ -438,7 +438,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .live-editor-host .cm-live-codeblock { padding-inline: 12px; background: var(--surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; }
 .live-editor-host .cm-live-link { color: var(--button); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .live-editor-host .cm-live-tag { color: var(--accent); text-decoration: none; font-weight: 650; }
-.live-editor-host .cm-live-tag:hover { text-decoration: underline; text-underline-offset: 3px; }
+.live-editor-host .cm-live-person { color: var(--button); text-decoration: none; font-weight: 650; }
+.live-editor-host .cm-live-navigation { cursor: pointer; }
+.live-editor-host .cm-live-reference:hover { text-decoration: underline; text-underline-offset: 3px; }
 .live-editor-host .cm-live-heading { font-weight: 700; line-height: 1.25; }
 .live-editor-host .cm-live-h1 { font-size: 2em; letter-spacing: -.035em; }
 .live-editor-host .cm-live-h2 { font-size: 1.55em; letter-spacing: -.025em; }

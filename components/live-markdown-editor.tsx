@@ -7,6 +7,7 @@ import { Compartment, EditorState, Prec, type Extension, type Range } from "@cod
 import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
+import { journalReferences } from "@/lib/markdown-references";
 import {
   Decoration,
   EditorView,
@@ -182,23 +183,43 @@ function liveDecorations(view: EditorView): DecorationSet {
       const links = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
       for (let match = links.exec(text); match; match = links.exec(text)) {
         const start = line.from + match.index;
-        addMark(start + 1, start + 1 + match[1].length, "cm-live-link");
-        if (!active) { hide(start, start + 1); hide(start + 1 + match[1].length, start + match[0].length); }
+        const labelFrom = start + 1;
+        const labelTo = labelFrom + match[1].length;
+        const href = match[2].trim();
+        if (!active && /^(https?:\/\/|mailto:|\/|#)/i.test(href)) {
+          decorations.push(Decoration.mark({
+            tagName: "a",
+            class: "cm-live-link cm-live-navigation",
+            attributes: { href, ...(/^https?:\/\//i.test(href) ? { target: "_blank", rel: "noreferrer" } : {}) },
+          }).range(labelFrom, labelTo));
+        } else addMark(labelFrom, labelTo, "cm-live-link");
+        if (!active) { hide(start, start + 1); hide(labelTo, start + match[0].length); }
       }
 
       if (!active) {
-        const protectedRanges = [...text.matchAll(/`[^`\n]*`|!?\[[^\]]*\]\([^)]+\)|https?:\/\/\S+/g)]
+        const protectedRanges = [...text.matchAll(/`[^`\n]*`|!?\[[^\]]*\]\([^)]+\)/g)]
           .map((match) => [match.index ?? 0, (match.index ?? 0) + match[0].length]);
-        const hashtags = /(^|[\s([{"'.,!?;:>])#([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu;
-        for (const match of text.matchAll(hashtags)) {
-          const start = (match.index ?? 0) + match[1].length;
-          const end = start + match[2].length + 1;
-          if (protectedRanges.some(([from, to]) => start < to && end > from)) continue;
+        const rawUrls = /https?:\/\/[^\s<]+/gi;
+        for (let match = rawUrls.exec(text); match; match = rawUrls.exec(text)) {
+          const href = match[0].replace(/[.,!?;:'"]+$/, "");
+          const from = match.index;
+          const to = from + href.length;
+          if (!href || protectedRanges.some(([protectedFrom, protectedTo]) => from < protectedTo && to > protectedFrom)) continue;
+          protectedRanges.push([from, to]);
           decorations.push(Decoration.mark({
             tagName: "a",
-            class: "cm-live-tag",
-            attributes: { href: `/tags/${encodeURIComponent(match[2].normalize("NFC").toLocaleLowerCase())}` },
-          }).range(line.from + start, line.from + end));
+            class: "cm-live-link cm-live-navigation",
+            attributes: { href, target: "_blank", rel: "noreferrer" },
+          }).range(line.from + from, line.from + to));
+        }
+        for (const reference of journalReferences(text)) {
+          if (protectedRanges.some(([from, to]) => reference.from < to && reference.to > from)) continue;
+          const collection = reference.kind === "tag" ? "tags" : "people";
+          decorations.push(Decoration.mark({
+            tagName: "a",
+            class: `cm-live-reference cm-live-${reference.kind} cm-live-navigation`,
+            attributes: { href: `/${collection}/${encodeURIComponent(reference.label.normalize("NFC").toLocaleLowerCase())}` },
+          }).range(line.from + reference.from, line.from + reference.to));
         }
       }
 
@@ -220,13 +241,14 @@ const livePreview: Extension = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
-const hashtagNavigation = EditorView.domEventHandlers({
+const referenceNavigation = EditorView.domEventHandlers({
   mousedown(event) {
     if (event.button !== 0) return false;
-    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>("a.cm-live-tag");
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>("a.cm-live-navigation");
     if (!link) return false;
     event.preventDefault();
-    window.location.assign(link.href);
+    if (link.target === "_blank") window.open(link.href, "_blank", "noopener,noreferrer");
+    else window.location.assign(link.href);
     return true;
   },
 });
@@ -355,7 +377,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
         EditorView.contentAttributes.of({ spellcheck: "true" }),
         placeholder("What’s on your mind?"),
         livePreview,
-        hashtagNavigation,
+        referenceNavigation,
         editorEvents,
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !externalUpdate.current) onChangeRef.current(update.state.doc.toString());

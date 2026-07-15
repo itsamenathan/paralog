@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { remarkHashtags } from "@/lib/remark-hashtags";
+import { remarkJournalReferences } from "@/lib/markdown-references";
 import { markdownBody, setLocationFrontMatter } from "@/lib/front-matter";
 
 const LiveMarkdownEditor = dynamic(() => import("./live-markdown-editor"), {
@@ -31,7 +31,7 @@ type Settings = {
   notificationTimezone: string;
   notificationSchedules: NotificationSchedule[];
 };
-type TagSummary = { name: string; count: number; dates: string[] };
+type ReferenceSummary = { name: string; count: number; dates: string[] };
 type ImmichPhoto = { id: string; width: number | null; height: number | null; capturedAt: string | null };
 type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: string; count?: number };
 type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
@@ -244,19 +244,22 @@ async function unsubscribeCurrentDevice() {
   }
 }
 
-function TagBrowser({ tags }: {
-  tags: TagSummary[];
+function ReferenceBrowser({ references, kind }: {
+  references: ReferenceSummary[];
+  kind: "tag" | "person";
 }) {
-  const largest = Math.max(...tags.map((tag) => tag.count), 1);
-  return <section className="tag-browser" aria-label="Journal tags">
-    <div className="tag-heading"><p className="eyebrow">TAGS</p></div>
+  const largest = Math.max(...references.map((reference) => reference.count), 1);
+  const marker = kind === "tag" ? "#" : "@";
+  const collection = kind === "tag" ? "tags" : "people";
+  return <section className="tag-browser" aria-label={`Journal ${collection}`}>
+    <div className="tag-heading"><p className="eyebrow">{collection.toUpperCase()}</p></div>
     <div className="tag-cloud">
-      {tags.map((tag) => <a
-        href={`/tags/${encodeURIComponent(tag.name.normalize("NFC").toLocaleLowerCase())}`}
-        key={tag.name}
-        style={{ "--tag-weight": String(tag.count / largest) } as React.CSSProperties}
-        aria-label={`#${tag.name}, ${tag.count} ${tag.count === 1 ? "entry" : "entries"}`}
-      >#{tag.name}</a>)}
+      {references.map((reference) => <a
+        href={`/${collection}/${encodeURIComponent(reference.name.normalize("NFC").toLocaleLowerCase())}`}
+        key={reference.name}
+        style={{ "--tag-weight": String(reference.count / largest) } as React.CSSProperties}
+        aria-label={`${marker}${reference.name}, ${reference.count} ${reference.count === 1 ? "entry" : "entries"}`}
+      >{marker}{reference.name}</a>)}
     </div>
   </section>;
 }
@@ -479,7 +482,8 @@ export default function Journal() {
   const [dirty, setDirty] = useState(false);
   const [view, setView] = useState<"rich" | "source" | "preview">("rich");
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [tags, setTags] = useState<TagSummary[]>([]);
+  const [tags, setTags] = useState<ReferenceSummary[]>([]);
+  const [people, setPeople] = useState<ReferenceSummary[]>([]);
   const [photos, setPhotos] = useState<ImmichPhoto[]>([]);
   const [photoTotal, setPhotoTotal] = useState(0);
   const [openPhoto, setOpenPhoto] = useState<ImmichPhoto | null>(null);
@@ -556,12 +560,16 @@ export default function Journal() {
     }
   }, [applyRemoteEntry]);
 
-  const loadTags = useCallback(async () => {
+  const loadReferences = useCallback(async () => {
     try {
-      const response = await fetch("/api/tags", { cache: "no-store" });
-      if (response.ok) setTags((await response.json()).tags);
+      const [tagResponse, peopleResponse] = await Promise.all([
+        fetch("/api/tags", { cache: "no-store" }),
+        fetch("/api/people", { cache: "no-store" }),
+      ]);
+      if (tagResponse.ok) setTags((await tagResponse.json()).tags);
+      if (peopleResponse.ok) setPeople((await peopleResponse.json()).people);
     } catch {
-      // Keep the last cloud available when offline.
+      // Keep the last references available when offline.
     }
   }, []);
 
@@ -662,8 +670,8 @@ export default function Journal() {
     setThemeReady(true);
     setOnline(navigator.onLine);
     fetch("/api/settings").then((response) => response.ok ? response.json() : null).then(setSettings).catch(() => undefined);
-    loadTags();
-  }, [loadTags]);
+    loadReferences();
+  }, [loadReferences]);
 
   useEffect(() => {
     if (!settings) return;
@@ -777,7 +785,7 @@ export default function Journal() {
 
   useEffect(() => {
     const refresh = () => {
-      if (document.visibilityState === "visible") { refreshRemote(selected); loadTags(); }
+      if (document.visibilityState === "visible") { refreshRemote(selected); loadReferences(); }
     };
     const interval = window.setInterval(refresh, 30_000);
     window.addEventListener("focus", refresh);
@@ -787,7 +795,7 @@ export default function Journal() {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [loadTags, refreshRemote, selected]);
+  }, [loadReferences, refreshRemote, selected]);
 
   useEffect(() => {
     if (!online) return;
@@ -796,14 +804,14 @@ export default function Journal() {
     events.onmessage = (event) => {
       try {
         const change = JSON.parse(event.data) as { date?: string };
-        loadTags();
+        loadReferences();
         if (change.date === selectedRef.current) refreshRemote(change.date);
       } catch {
         // Ignore malformed events and let EventSource reconnect normally.
       }
     };
     return () => events.close();
-  }, [loadTags, online, refreshRemote]);
+  }, [loadReferences, online, refreshRemote]);
 
   useEffect(() => {
     const handleOnline = () => { setOnline(true); syncPending(); };
@@ -1098,7 +1106,7 @@ export default function Journal() {
     />
   );
   const rendered = (
-    <article className="preview"><ReactMarkdown remarkPlugins={[remarkHashtags]}>{markdownBody(entry.content) || "*Nothing here yet.*"}</ReactMarkdown></article>
+    <article className="preview"><ReactMarkdown remarkPlugins={[remarkJournalReferences]}>{markdownBody(entry.content) || "*Nothing here yet.*"}</ReactMarkdown></article>
   );
 
   return (
@@ -1107,7 +1115,8 @@ export default function Journal() {
         <div className="brand"><p className="eyebrow">PRIVATE JOURNAL</p><h1>Paralog</h1></div>
         <button className="today-button" type="button" onClick={() => choose(today)}><span>Today</span><b aria-hidden="true">↗</b></button>
         <Calendar month={month} selected={selected} savedDates={savedDates} onMonthChange={setMonth} onSelect={choose} />
-        {settings?.showTagCloud && tags.length > 0 && <TagBrowser tags={tags} />}
+        {settings?.showTagCloud && tags.length > 0 && <ReferenceBrowser references={tags} kind="tag" />}
+        {settings?.showTagCloud && people.length > 0 && <ReferenceBrowser references={people} kind="person" />}
         <div className="side-actions">
           <button type="button" onClick={() => setDark(!dark)}><span className="action-icon" aria-hidden="true">{dark ? "☀" : "◐"}</span><span className="action-label">{dark ? "Light mode" : "Dark mode"}</span></button>
           <button type="button" onClick={() => setShowSettings(true)}><span className="action-icon" aria-hidden="true">⚙</span><span className="action-label">Settings</span></button>
@@ -1198,7 +1207,8 @@ export default function Journal() {
           <section className="calendar-sheet" role="dialog" aria-modal="true" aria-label="Choose a journal date" onClick={(event) => event.stopPropagation()}>
             <div className="sheet-header"><div><p className="eyebrow">BROWSE JOURNAL</p><h3>Choose a day</h3></div><button type="button" onClick={() => setShowCalendar(false)} aria-label="Close calendar">×</button></div>
             <Calendar month={month} selected={selected} savedDates={savedDates} onMonthChange={setMonth} onSelect={choose} />
-            {settings?.showTagCloud && tags.length > 0 && <TagBrowser tags={tags} />}
+            {settings?.showTagCloud && tags.length > 0 && <ReferenceBrowser references={tags} kind="tag" />}
+            {settings?.showTagCloud && people.length > 0 && <ReferenceBrowser references={people} kind="person" />}
           </section>
         </div>
       )}
@@ -1209,7 +1219,7 @@ export default function Journal() {
             <div className="settings-title"><div><p className="eyebrow">PREFERENCES</p><h2 id="settings-title">Journal settings</h2></div><button type="button" onClick={() => setShowSettings(false)} aria-label="Close settings">×</button></div>
             <label>Save format<small>Tokens: YYYY, MM, MMMM, DD, dddd. Existing files stay where they are.</small><input value={settings.saveFormat} onChange={(event) => setSettings({ ...settings, saveFormat: event.target.value })} /></label>
             <label>New entry template<small>Use any Markdown you want as a starting point.</small><textarea value={settings.template} onChange={(event) => setSettings({ ...settings, template: event.target.value })} /></label>
-            <label className="toggle-setting"><input type="checkbox" checked={settings.showTagCloud} onChange={(event) => setSettings({ ...settings, showTagCloud: event.target.checked })} /><span><b>Show tag cloud</b><small>Collect hashtags from your entries in the desktop sidebar and mobile calendar.</small></span></label>
+            <label className="toggle-setting"><input type="checkbox" checked={settings.showTagCloud} onChange={(event) => setSettings({ ...settings, showTagCloud: event.target.checked })} /><span><b>Show tags and people</b><small>Collect hashtags and @mentions from your entries in the desktop sidebar and mobile calendar.</small></span></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.autoSave} onChange={(event) => setSettings({ ...settings, autoSave: event.target.checked })} /><span><b>Automatically save entries</b><small>Save after you pause typing. You can always save immediately with Ctrl+S or Cmd+S.</small></span></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.autoLocation} onChange={(event) => setSettings({ ...settings, autoLocation: event.target.checked })} /><span><b>Add location to new entries</b><small>When you begin writing on an empty day, request your location and add the nearest city, state, and country to its metadata.</small></span></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.vimMode} onChange={(event) => setSettings({ ...settings, vimMode: event.target.checked })} /><span><b>Vim keybindings</b><small>Enable Normal, Insert, and Visual modes in the Live Preview editor on desktop. Mobile always uses standard editing.</small></span></label>
