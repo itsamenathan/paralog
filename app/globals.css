@@ -251,16 +251,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .photo-card:focus-visible { outline-offset: 3px; }
 .photo-shelf + .memory-shelf { margin-top: 12px; }
 
-.photo-lightbox-backdrop { position: fixed; inset: 0; z-index: 140; display: grid; place-items: center; padding: 28px; background: rgba(8, 8, 12, .84); backdrop-filter: blur(8px); }
-.photo-lightbox { position: relative; width: min(1100px, 100%); height: min(860px, calc(100dvh - 56px)); display: grid; place-items: center; touch-action: pan-y; user-select: none; }
-.photo-lightbox > img { width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 56px); display: block; border-radius: 12px; box-shadow: var(--shadow); object-fit: contain; }
-.photo-lightbox-close { position: absolute; top: 0; right: 0; z-index: 1; width: 42px; height: 42px; padding: 0; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface-raised); color: var(--ink); box-shadow: var(--shadow); font-size: 25px; line-height: 1; }
+.photo-lightbox-backdrop { position: fixed; inset: 0; z-index: 140; padding: 28px; background: rgba(8, 8, 12, .84); backdrop-filter: blur(8px); }
+.photo-lightbox { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; touch-action: pan-y; user-select: none; }
+.photo-lightbox-image { width: auto; height: auto; max-width: 100%; max-height: 100%; display: block; border-radius: 12px; box-shadow: var(--shadow); object-fit: contain; opacity: 0; transition: opacity .18s ease; }
+.photo-lightbox-image.loaded { opacity: 1; }
+.photo-lightbox-close { position: absolute; top: 0; right: 0; z-index: 2; width: 42px; height: 42px; padding: 0; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface-raised); color: var(--ink); box-shadow: var(--shadow); font-size: 25px; line-height: 1; }
 .photo-lightbox-close:hover { background: var(--accent-soft); }
 .photo-lightbox-nav { position: absolute; top: 50%; z-index: 1; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line-strong); border-radius: 50%; background: color-mix(in srgb, var(--surface-raised) 88%, transparent); color: var(--ink); box-shadow: var(--shadow); font-size: 20px; transform: translateY(-50%); }
 .photo-lightbox-nav:hover { background: var(--surface-raised); }
 .photo-lightbox-nav.previous { left: 8px; }
 .photo-lightbox-nav.next { right: 8px; }
-.photo-lightbox-position { position: absolute; bottom: 10px; left: 50%; z-index: 1; padding: 5px 9px; border-radius: 999px; background: color-mix(in srgb, var(--surface-raised) 88%, transparent); color: var(--ink); box-shadow: var(--shadow); font: 600 10px ui-monospace, SFMono-Regular, Menlo, monospace; transform: translateX(-50%); }
+.photo-lightbox-position { position: absolute; top: 0; left: 0; z-index: 2; padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 999px; background: color-mix(in srgb, var(--surface-raised) 90%, transparent); color: var(--ink); box-shadow: var(--shadow); font: 650 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .memory-shelf { margin: 24px 0 0; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
 .memory-shelf-mobile { display: none; }
@@ -622,13 +623,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .photo-grid img { height: 92px; }
   .photo-shelf + .memory-shelf { margin-top: 12px; }
   .photo-lightbox-backdrop { padding: 12px; }
-  .photo-lightbox { height: calc(100dvh - 24px); }
-  .photo-lightbox > img { max-height: calc(100dvh - 24px); border-radius: 9px; }
+  .photo-lightbox-image { border-radius: 9px; }
   .photo-lightbox-close { top: 8px; right: 8px; }
   .photo-lightbox-nav { width: 42px; height: 42px; }
   .photo-lightbox-nav.previous { left: 6px; }
   .photo-lightbox-nav.next { right: 6px; }
-  .photo-lightbox-position { bottom: 8px; }
+  .photo-lightbox-position { top: 8px; left: 8px; }
   .memory-shelf { margin-top: 18px; padding: 16px; }
   .memory-shelf-desktop { display: none; }
   .memory-shelf-mobile { display: block; margin-top: 6px; }

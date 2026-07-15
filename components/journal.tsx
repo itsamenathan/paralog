@@ -39,6 +39,9 @@ type SaveState = "saved" | "saving" | "unsaved" | "offline";
 type CachedEntry = Entry & { pending: boolean; updatedAt: string };
 type CommandIconName = "edit" | "markdown" | "read" | "focus";
 
+const immichImageUrl = (id: string, size: "thumbnail" | "preview") =>
+  `/api/immich/thumbnail/${encodeURIComponent(id)}?size=${size}`;
+
 function CommandIcon({ name }: { name: CommandIconName }) {
   return <svg className="command-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {name === "edit" && <><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></>}
@@ -302,7 +305,7 @@ function PhotoShelf({ photos, total, selected, placement, onOpen }: {
     <div className="photo-grid">
       {photos.map((photo, index) => <button type="button" className="photo-card" key={photo.id} onClick={() => onOpen(photo)} aria-label={`Open photo ${index + 1} from ${displayDate(selected)} larger`}>
         <img
-          src={`/api/immich/thumbnail/${encodeURIComponent(photo.id)}`}
+          src={immichImageUrl(photo.id, "thumbnail")}
           alt=""
           width={photo.width || 640}
           height={photo.height || 480}
@@ -480,6 +483,7 @@ export default function Journal() {
   const [photos, setPhotos] = useState<ImmichPhoto[]>([]);
   const [photoTotal, setPhotoTotal] = useState(0);
   const [openPhoto, setOpenPhoto] = useState<ImmichPhoto | null>(null);
+  const [loadedPhotoId, setLoadedPhotoId] = useState<string | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showRevisions, setShowRevisions] = useState(false);
   const [showStats, setShowStats] = useState(false);
@@ -859,6 +863,25 @@ export default function Journal() {
       .catch(() => undefined);
     return () => controller.abort();
   }, [selected]);
+
+  useEffect(() => {
+    setLoadedPhotoId(null);
+    if (!openPhoto || photos.length < 2) return;
+    const timer = window.setTimeout(() => {
+      const current = photos.findIndex((photo) => photo.id === openPhoto.id);
+      if (current < 0) return;
+      const adjacent = new Set([
+        photos[(current - 1 + photos.length) % photos.length]?.id,
+        photos[(current + 1) % photos.length]?.id,
+      ]);
+      adjacent.delete(openPhoto.id);
+      for (const id of adjacent) {
+        const image = new Image();
+        image.src = immichImageUrl(id, "preview");
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [openPhoto, photos]);
 
   useEffect(() => { loadMonth(month); }, [loadMonth, month]);
 
@@ -1243,7 +1266,14 @@ export default function Journal() {
           onPointerCancel={() => { photoSwipeStartRef.current = null; }}
         >
           <button type="button" className="photo-lightbox-close" onClick={() => setOpenPhoto(null)} aria-label="Close photo">×</button>
-          <img src={`/api/immich/thumbnail/${encodeURIComponent(openPhoto.id)}`} alt={`Photo from ${displayDate(selected)}`} draggable={false} />
+          <img
+            className={`photo-lightbox-image ${loadedPhotoId === openPhoto.id ? "loaded" : ""}`}
+            src={immichImageUrl(openPhoto.id, "preview")}
+            alt={`Photo from ${displayDate(selected)}`}
+            decoding="async"
+            draggable={false}
+            onLoad={() => setLoadedPhotoId(openPhoto.id)}
+          />
           {photos.length > 1 && <>
             <button type="button" className="photo-lightbox-nav previous" onClick={() => moveOpenPhoto(-1)} aria-label="Previous photo">←</button>
             <span className="photo-lightbox-position" aria-live="polite">{photos.findIndex((photo) => photo.id === openPhoto.id) + 1} / {photos.length}</span>

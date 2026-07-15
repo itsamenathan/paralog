@@ -1,5 +1,5 @@
-const SHELL_CACHE = "paralog-shell-v3";
-const RUNTIME_CACHE = "paralog-runtime-v3";
+const SHELL_CACHE = "paralog-shell-v4";
+const RUNTIME_CACHE = "paralog-runtime-v4";
 const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -102,7 +102,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.startsWith("/_next/") || url.pathname.startsWith("/icon") || url.pathname === "/manifest.webmanifest") {
+  if (url.pathname.startsWith("/_next/")) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  if (url.pathname.startsWith("/icon") || url.pathname === "/manifest.webmanifest") {
     event.respondWith(caches.match(request).then((cached) => cached || fetch(request).then((response) => {
       const copy = response.clone();
       caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));

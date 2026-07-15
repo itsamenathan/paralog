@@ -24,6 +24,8 @@ export type ImmichPhoto = {
   capturedAt: string | null;
 };
 
+export type ImmichImageSize = 'thumbnail' | 'preview';
+
 function config() {
   const rawUrl = process.env.IMMICH_API_URL?.trim();
   const apiKey = process.env.IMMICH_API_KEY?.trim();
@@ -105,9 +107,9 @@ export async function photosForDate(date: string) {
   return { photos, total: matching.length };
 }
 
-export async function photoPreview(id: string) {
+export async function photoPreview(id: string, size: ImmichImageSize = 'preview') {
   if (!ASSET_ID_PATTERN.test(id)) return null;
-  const response = await request(`/assets/${encodeURIComponent(id)}/thumbnail?size=preview`);
+  const response = await request(`/assets/${encodeURIComponent(id)}/thumbnail?size=${size}`);
   if (!response.ok) return null;
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.startsWith('image/')) return null;
