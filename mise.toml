@@ -7,7 +7,7 @@ run = "npm ci"
 
 [tasks.dev]
 description = "Start the Next.js development server"
-run = "npm run dev"
+run = "node node_modules/next/dist/bin/next dev --hostname 0.0.0.0"
 
 [tasks.build]
 description = "Create a production build"
