@@ -352,6 +352,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
         markdown(),
         Prec.high(keymap.of([{ key: "Enter", run: exitEmptyMarkdownBlock }, { key: "Tab", run: indentMore }, { key: "Shift-Tab", run: indentLess }])),
         EditorView.lineWrapping,
+        EditorView.contentAttributes.of({ spellcheck: "true" }),
         placeholder("What’s on your mind?"),
         livePreview,
         hashtagNavigation,

@@ -1088,6 +1088,7 @@ export default function Journal() {
     <textarea
       ref={sourceEditorRef}
       className="source-editor"
+      spellCheck
       value={entry.content}
       onChange={(event) => { changeContent(event.target.value); resizeSourceEditor(event.currentTarget); keepSourceCursorVisible(event.currentTarget); }}
       onFocus={(event) => keepSourceCursorVisible(event.currentTarget)}

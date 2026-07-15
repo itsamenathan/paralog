@@ -24,9 +24,11 @@ Paralog is a single-user, self-hosted Next.js journal. The app uses the App Rout
 
 ## Commands
 
-- `npm run dev` starts Next.js on `0.0.0.0`.
-- `npm run build` is the required verification command after code changes.
-- `npm run start` serves the production build.
+- Use `mise` for Node.js and npm commands so the project runs with the toolchain pinned in `mise.toml`. Prefer a defined task (`mise run <task>`); for commands without a task, use `mise exec -- <command>` instead of invoking `node`, `npm`, or `npx` directly.
+- `mise run install` installs the locked npm dependencies.
+- `mise run dev` starts Next.js on `0.0.0.0`.
+- `mise run build` is the required verification command after code changes.
+- `mise run start` serves the production build.
 - `docker compose up --build -d` is the self-hosted deployment path.
 
 ## Storage invariants
@@ -50,6 +52,6 @@ Paralog is a single-user, self-hosted Next.js journal. The app uses the App Rout
 
 1. Read the relevant route, component, and storage code before editing.
 2. Make focused changes with `apply_patch`.
-3. Run `npm run build`.
+3. Run `mise run build`.
 4. For UI changes, test both light/dark and a mobile-width viewport when possible.
 5. Do not commit generated `.next/`, `node_modules/`, or local `data/` contents.
