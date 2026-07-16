@@ -7,6 +7,7 @@ import { dataDir, db } from "@/lib/db";
 import { entries, revisions, settingsTable } from "@/lib/db/schema";
 import { markdownBody } from "@/lib/front-matter";
 import { journalReferences, type JournalReference } from "@/lib/markdown-references";
+import { legacyWidgetSettings, normalizeWidgetLayout, resolveWidgetLayoutUpdate, type WidgetLayout } from "@/lib/widget-layout";
 
 export { dataDir } from "@/lib/db";
 const defaultFormat = "YYYY/MM-MMMM/YYYY-MM-DD-dddd.md";
@@ -19,7 +20,8 @@ function parts(date: string) {
   return { YYYY: String(year), YY: String(year).slice(-2), MM: String(month).padStart(2, "0"), M: String(month), DD: String(day).padStart(2, "0"), D: String(day), MMMM: new Intl.DateTimeFormat("en-US", { month: "long" }).format(local), MMM: new Intl.DateTimeFormat("en-US", { month: "short" }).format(local), dddd: new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(local), ddd: new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(local) };
 }
 
-function setting(key: string, fallback: string) { return db().select({ value: settingsTable.value }).from(settingsTable).where(eq(settingsTable.key, key)).get()?.value || fallback; }
+function settingValue(key: string) { return db().select({ value: settingsTable.value }).from(settingsTable).where(eq(settingsTable.key, key)).get()?.value; }
+function setting(key: string, fallback: string) { return settingValue(key) || fallback; }
 function providerOrder(): ProviderId[] {
   try {
     const value = JSON.parse(setting("providerOrder", JSON.stringify(defaultProviderOrder)));
@@ -27,26 +29,48 @@ function providerOrder(): ProviderId[] {
   } catch { /* Fall back to the default order. */ }
   return [...defaultProviderOrder];
 }
-export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", ""), showTagCloud: setting("showTagCloud", "true") !== "false", vimMode: setting("vimMode", "false") === "true", autoSave: setting("autoSave", "true") !== "false", autoLocation: setting("autoLocation", "false") === "true", providerOrder: providerOrder() }; }
-export function updateSettings(values: { saveFormat?: string; template?: string; showTagCloud?: boolean; vimMode?: boolean; autoSave?: boolean; autoLocation?: boolean; providerOrder?: ProviderId[] }) {
+function widgetLayout() {
+  const stored = settingValue("widgetLayout");
+  let value: unknown;
+  if (stored) {
+    try { value = JSON.parse(stored); } catch { /* Normalize an invalid stored value. */ }
+  }
+  return normalizeWidgetLayout(value, {
+    providerOrder: providerOrder(),
+    showTagCloud: setting("showTagCloud", "true") !== "false",
+  });
+}
+export function settings() {
+  const layout = widgetLayout();
+  return {
+    saveFormat: setting("saveFormat", defaultFormat),
+    template: setting("template", ""),
+    widgetLayout: layout,
+    ...legacyWidgetSettings(layout),
+    vimMode: setting("vimMode", "false") === "true",
+    autoSave: setting("autoSave", "true") !== "false",
+    autoLocation: setting("autoLocation", "false") === "true",
+  };
+}
+export function updateSettings(values: { saveFormat?: string; template?: string; widgetLayout?: WidgetLayout; showTagCloud?: boolean; vimMode?: boolean; autoSave?: boolean; autoLocation?: boolean; providerOrder?: ProviderId[] }) {
   const current = settings();
   const saveFormat = values.saveFormat?.trim() || current.saveFormat;
   if (!saveFormat.includes("YYYY") || !saveFormat.includes("MM") || !saveFormat.includes("DD") || saveFormat.includes("..") || path.isAbsolute(saveFormat)) throw new Error("Save format must be a relative path containing YYYY, MM, and DD.");
   const template = values.template ?? current.template;
-  const showTagCloud = values.showTagCloud ?? current.showTagCloud;
   const vimMode = values.vimMode ?? current.vimMode;
   const autoSave = values.autoSave ?? current.autoSave;
   const autoLocation = values.autoLocation ?? current.autoLocation;
-  const nextProviderOrder = values.providerOrder ?? current.providerOrder;
-  if (!Array.isArray(nextProviderOrder) || nextProviderOrder.length !== defaultProviderOrder.length || !defaultProviderOrder.every((provider) => nextProviderOrder.includes(provider))) throw new Error("Provider order must contain GitHub, Immich, and archive exactly once.");
+  const nextWidgetLayout = resolveWidgetLayoutUpdate(current.widgetLayout, values);
+  const legacy = legacyWidgetSettings(nextWidgetLayout);
   const upsert = (key: string, value: string) => db().insert(settingsTable).values({ key, value }).onConflictDoUpdate({ target: settingsTable.key, set: { value } }).run();
   upsert("saveFormat", saveFormat);
   upsert("template", template);
-  upsert("showTagCloud", String(showTagCloud));
+  upsert("widgetLayout", JSON.stringify(nextWidgetLayout));
+  upsert("showTagCloud", String(legacy.showTagCloud));
   upsert("vimMode", String(vimMode));
   upsert("autoSave", String(autoSave));
   upsert("autoLocation", String(autoLocation));
-  upsert("providerOrder", JSON.stringify(nextProviderOrder));
+  upsert("providerOrder", JSON.stringify(legacy.providerOrder));
   return settings();
 }
 
