@@ -13,6 +13,10 @@
   --button: #644ac9;
   --button-hover: #5239b5;
   --success: #14710a;
+  --heat-1: color-mix(in srgb, var(--accent) 24%, var(--paper));
+  --heat-2: color-mix(in srgb, var(--accent) 46%, var(--paper));
+  --heat-3: color-mix(in srgb, var(--accent) 72%, var(--paper));
+  --heat-4: var(--accent);
   --danger: #a92323;
   --warning: #a34d14;
   --mobile-keyboard-height: 0px;
@@ -87,7 +91,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 }
 .today-button b { font-size: 15px; font-weight: 400; opacity: .65; }
 
-.calendar { display: grid; gap: 15px; }
 .month-nav { min-height: 28px; display: grid; grid-template-columns: 30px 1fr 30px; align-items: center; text-align: center; }
 .month-nav strong { font-size: 13px; font-weight: 650; }
 .month-nav button {
@@ -100,37 +103,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   color: var(--muted);
 }
 .month-nav button:hover { background: var(--accent-soft); color: var(--ink); }
-.weekdays, .days { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; gap: 4px; }
-.weekdays span { color: var(--muted); font: 600 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
-.days { row-gap: 6px; }
-.days button {
-  position: relative;
-  width: 30px;
-  height: 30px;
-  justify-self: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ink);
-  font-size: 12px;
-}
-.days button:hover { background: var(--accent-soft); }
-.days button.written::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 2px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-  transform: translateX(-50%);
-}
-.days button.selected { background: var(--ink); color: var(--paper); box-shadow: 0 0 0 3px var(--surface), 0 0 0 4px var(--line-strong); }
-.days button.selected.written::after { background: var(--paper); }
-.calendar-note { margin: 2px 0 0; color: var(--muted); font-size: 10px; }
-.calendar-note i { display: inline-block; width: 5px; height: 5px; margin: 0 6px 1px 1px; border-radius: 50%; background: var(--accent); }
+.word-heatmap { --heatmap-cell: 30px; min-width: 0; display: grid; gap: 11px; }
+.heatmap-weekdays, .heatmap-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+.heatmap-weekdays span { color: var(--muted); font: 600 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.heatmap-grid { row-gap: 6px; }
+.heatmap-cell { width: var(--heatmap-cell); height: var(--heatmap-cell); justify-self: center; padding: 0; border: 0; border-radius: 7px; background: var(--line); color: var(--ink); font-size: 11px; font-weight: 650; }
+button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
+.heatmap-cell.outside { background: transparent; }
+.heatmap-cell.level-1, .heatmap-legend .level-1 { background: var(--heat-1); }
+.heatmap-cell.level-2, .heatmap-legend .level-2 { background: var(--heat-2); }
+.heatmap-cell.level-3, .heatmap-legend .level-3 { background: var(--heat-3); }
+.heatmap-cell.level-4, .heatmap-legend .level-4 { background: var(--heat-4); }
+.heatmap-cell.level-3, .heatmap-cell.level-4 { color: var(--paper); }
+.heatmap-cell.selected { position: relative; z-index: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--ink); }
+.heatmap-legend { display: flex; align-items: center; justify-content: flex-end; gap: 3px; color: var(--muted); font-size: 8px; }
+.heatmap-legend i { width: 8px; height: 8px; border-radius: 1px; background: var(--line); }
+.heatmap-legend span:first-child { margin-right: auto; font-weight: 650; }
+.heatmap-legend span:last-child { margin-left: 2px; }
 
 .tag-browser { display: grid; gap: 10px; padding-top: 18px; border-top: 1px solid var(--line); }
 .tag-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -559,8 +548,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
 .calendar-sheet { width: min(410px, 100%); max-height: calc(100dvh - 40px); padding: 22px; overflow-y: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-raised); box-shadow: var(--shadow); }
 .sheet-header { margin-bottom: 22px; }
 .sheet-header h3 { margin: 0; font-size: 25px; }
-.calendar-sheet .days button { width: 38px; height: 38px; font-size: 13px; }
-.calendar-sheet .days { row-gap: 8px; }
+.calendar-sheet .word-heatmap { --heatmap-cell: 38px; max-width: 380px; margin: 0 auto; }
+.calendar-sheet .heatmap-cell { border-radius: 9px; font-size: 13px; }
 
 .login-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
 .login-page form { width: min(390px, 100%); display: grid; gap: 19px; padding: 36px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); box-shadow: var(--shadow); }
@@ -593,8 +582,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .entry-header { align-items: flex-start; flex-direction: column; }
   .header-actions { width: 100%; justify-content: flex-end; }
   .date-navigation h2 { white-space: normal; }
-  .sidebar .weekdays, .sidebar .days { gap: 2px; }
-  .sidebar .days button { width: 27px; height: 27px; }
+  .sidebar .heatmap-cell { width: 27px; height: 27px; }
+  .sidebar .heatmap-weekdays, .sidebar .heatmap-grid { gap: 2px; }
   .toolbar-hint { display: none; }
 }
 
@@ -687,7 +676,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"
   .mobile-selection-toolbar button:hover { background: var(--accent-soft); }
   .sheet-backdrop { align-items: end; padding: 0; }
   .calendar-sheet { width: 100%; padding: 21px 20px calc(24px + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 20px 20px 0 0; }
-  .calendar-sheet .calendar { max-width: 380px; margin: 0 auto; }
   .calendar-sheet .tag-browser { max-width: 380px; margin: 20px auto 0; }
   .modal-backdrop { align-items: end; padding: 0; }
   .settings, .revisions-panel { width: 100%; max-height: 88dvh; padding: 22px 18px calc(22px + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 20px 20px 0 0; }

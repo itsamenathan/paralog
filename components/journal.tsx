@@ -23,6 +23,7 @@ type Entry = {
 type NotificationRule = "always" | "empty";
 type NotificationSchedule = { id: string; enabled: boolean; time: string; weekdays: number[]; rule: NotificationRule; title: string; body: string };
 type ProviderId = "github" | "immich" | "archive";
+type CalendarEntry = { date: string; words: number };
 type Settings = {
   saveFormat: string;
   template: string;
@@ -130,16 +131,31 @@ function cacheEntry(date: string, entry: Entry, pending: boolean) {
   );
 }
 
-function pendingDates(month: string) {
-  const dates: string[] = [];
+function wordCount(content: string) {
+  const body = markdownBody(content).trim();
+  return body ? body.split(/\s+/).length : 0;
+}
+
+function pendingEntries(period: string, onlyPending = false) {
+  const entries: CalendarEntry[] = [];
   for (let index = 0; index < localStorage.length; index += 1) {
     const key = localStorage.key(index);
     if (!key?.startsWith(ENTRY_CACHE)) continue;
     const date = key.slice(ENTRY_CACHE.length);
     const cached = readCachedEntry(date);
-    if (date.startsWith(`${month}-`) && cached?.content.trim()) dates.push(date);
+    if (date.startsWith(`${period}-`) && cached && (!onlyPending || cached.pending) && (cached.exists || cached.content.trim())) entries.push({ date, words: wordCount(cached.content) });
   }
-  return dates;
+  return entries;
+}
+
+function entryMap(entries: CalendarEntry[]) {
+  return Object.fromEntries(entries.map((entry) => [entry.date, entry.words]));
+}
+
+function mergeCalendarEntries(...groups: CalendarEntry[][]) {
+  const merged = new Map<string, number>();
+  groups.forEach((group) => group.forEach((entry) => merged.set(entry.date, entry.words)));
+  return [...merged].map(([date, words]) => ({ date, words }));
 }
 
 function currentPosition() {
@@ -150,20 +166,20 @@ function currentPosition() {
   }));
 }
 
-function Calendar({
+function WordHeatmap({
   month,
   selected,
-  savedDates,
+  dayWords,
   onMonthChange,
   onSelect,
 }: {
   month: Date;
   selected: string;
-  savedDates: string[];
+  dayWords: Record<string, number>;
   onMonthChange: (date: Date) => void;
   onSelect: (date: string) => void;
 }) {
-  const days = useMemo(() => {
+  const cells = useMemo(() => {
     const first = new Date(month.getFullYear(), month.getMonth(), 1);
     const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
     return Array.from({ length: first.getDay() + count }, (_, index) =>
@@ -172,52 +188,51 @@ function Calendar({
         : new Date(month.getFullYear(), month.getMonth(), index - first.getDay() + 1),
     );
   }, [month]);
+  const { levels, maximum } = useMemo(() => {
+    const prefix = `${monthKey(month)}-`;
+    const values = [...new Set(Object.entries(dayWords)
+      .filter(([date, words]) => date.startsWith(prefix) && words > 0)
+      .map(([, words]) => words))]
+      .sort((left, right) => left - right);
+    const scale = new Map<number, number>();
+    values.forEach((words, index) => {
+      const level = values.length === 1 ? 4 : 1 + Math.floor((index * 3) / (values.length - 1));
+      scale.set(words, level);
+    });
+    return { levels: scale, maximum: values.at(-1) || 0 };
+  }, [dayWords, month]);
 
+  const label = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(month);
   return (
-    <section className="calendar" aria-label="Journal calendar">
+    <section className="word-heatmap" aria-label={`${label} journal word count heatmap`}>
       <div className="month-nav">
-        <button
-          type="button"
-          aria-label="Previous month"
-          onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
-        >
-          <span aria-hidden="true">←</span>
-        </button>
-        <strong>
-          {new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(month)}
-        </strong>
-        <button
-          type="button"
-          aria-label="Next month"
-          onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
-        >
-          <span aria-hidden="true">→</span>
-        </button>
+        <button type="button" aria-label="Previous month" onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><span aria-hidden="true">←</span></button>
+        <strong>{label}</strong>
+        <button type="button" aria-label="Next month" onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><span aria-hidden="true">→</span></button>
       </div>
-      <div className="weekdays" aria-hidden="true">
-        {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
-          <span key={`${day}-${index}`}>{day}</span>
-        ))}
+      <div className="heatmap-weekdays" aria-hidden="true">
+        {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
       </div>
-      <div className="days">
-        {days.map((day, index) =>
-          day ? (
-            <button
+      <div className="heatmap-grid">
+          {cells.map((date, index) => {
+            if (!date) return <span className="heatmap-cell outside" key={`empty-${index}`} />;
+            const value = iso(date);
+            const words = dayWords[value] ?? 0;
+            const level = words > 0 ? levels.get(words) || 1 : 0;
+            return <button
               type="button"
-              key={day.toISOString()}
-              aria-label={displayDate(iso(day))}
-              aria-current={iso(day) === selected ? "date" : undefined}
-              onClick={() => onSelect(iso(day))}
-              className={`${iso(day) === selected ? "selected" : ""} ${savedDates.includes(iso(day)) ? "written" : ""}`}
-            >
-              {day.getDate()}
-            </button>
-          ) : (
-            <span key={`empty-${index}`} />
-          ),
-        )}
+              className={`heatmap-cell level-${level} ${value === selected ? "selected" : ""}`}
+              key={value}
+              aria-label={`${displayDate(value)}: ${words} ${words === 1 ? "word" : "words"}, intensity ${level} of 4 for this month`}
+              aria-current={value === selected ? "date" : undefined}
+              title={`${displayDate(value)} · ${words} ${words === 1 ? "word" : "words"}`}
+              onClick={() => onSelect(value)}
+            >{date.getDate()}</button>;
+          })}
       </div>
-      <p className="calendar-note"><i /> Entry written</p>
+      <div className="heatmap-legend" title="Color intensity is ranked against the other entries in this month">
+        <span>Relative this month</span><span>0</span>{[0, 1, 2, 3, 4].map((level) => <i className={`level-${level}`} key={level} />)}<span>{maximum} words</span>
+      </div>
     </section>
   );
 }
@@ -496,7 +511,7 @@ export default function Journal() {
   const [selected, setSelected] = useState(today);
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [entry, setEntry] = useState<Entry>(EMPTY_ENTRY);
-  const [savedDates, setSavedDates] = useState<string[]>([]);
+  const [dayWords, setDayWords] = useState<Record<string, number>>({});
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [dirty, setDirty] = useState(false);
   const [view, setView] = useState<"rich" | "source" | "preview">("rich");
@@ -594,20 +609,27 @@ export default function Journal() {
     }
   }, []);
 
-  const loadMonth = useCallback(async (date: Date) => {
+  const loadCalendar = useCallback(async (date: Date) => {
     const key = monthKey(date);
     const cached = localStorage.getItem(`${CALENDAR_CACHE}${key}`);
     if (cached) {
-      try { setSavedDates([...new Set([...JSON.parse(cached), ...pendingDates(key)])]); } catch { /* Ignore stale cache. */ }
-    } else setSavedDates(pendingDates(key));
+      try {
+        const parsed = JSON.parse(cached) as CalendarEntry[] | string[];
+        const normalized = parsed.map((entry) => typeof entry === "string" ? { date: entry, words: 0 } : entry);
+        setDayWords(entryMap(mergeCalendarEntries(normalized, pendingEntries(key))));
+      } catch { /* Ignore stale cache. */ }
+    } else setDayWords(entryMap(pendingEntries(key)));
 
     try {
       const response = await fetch(`/api/calendar?month=${key}`);
       if (!response.ok) return;
-      const dates: string[] = (await response.json()).dates;
-      const merged = [...new Set([...dates, ...pendingDates(key)])];
+      const result = await response.json();
+      const entries: CalendarEntry[] = Array.isArray(result.entries)
+        ? result.entries
+        : (result.dates || []).map((entryDate: string) => ({ date: entryDate, words: 0 }));
+      const merged = mergeCalendarEntries(pendingEntries(key), entries, pendingEntries(key, true));
       localStorage.setItem(`${CALENDAR_CACHE}${key}`, JSON.stringify(merged));
-      setSavedDates(merged);
+      setDayWords(entryMap(merged));
     } catch {
       // The cached calendar remains usable offline.
     }
@@ -617,7 +639,7 @@ export default function Journal() {
     const draft = { ...current, content, exists: Boolean(content.trim()) || current.exists };
     cacheEntry(date, draft, true);
     if (date === selected) setSaveState(navigator.onLine ? "saving" : "offline");
-    setSavedDates((dates) => content.trim() ? [...new Set([...dates, date])] : dates);
+    setDayWords((days) => ({ ...days, [date]: wordCount(content) }));
 
     if (!navigator.onLine) return false;
     serverContentRef.current = content;
@@ -682,8 +704,8 @@ export default function Journal() {
       if (!cached?.pending) continue;
       await persistEntry(date, cached.content, cached);
     }
-    await loadMonth(month);
-  }, [loadMonth, month, persistEntry]);
+    await loadCalendar(month);
+  }, [loadCalendar, month, persistEntry]);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("paralog-theme");
@@ -923,7 +945,7 @@ export default function Journal() {
     return () => window.clearTimeout(timer);
   }, [openPhoto, photos]);
 
-  useEffect(() => { loadMonth(month); }, [loadMonth, month]);
+  useEffect(() => { loadCalendar(month); }, [loadCalendar, month]);
 
   useEffect(() => {
     if (!settings?.autoSave || !dirty || remoteUpdate) return;
@@ -1192,7 +1214,7 @@ export default function Journal() {
       <aside className="sidebar">
         <div className="brand"><p className="eyebrow">PRIVATE JOURNAL</p><h1>Paralog</h1></div>
         <button className="today-button" type="button" onClick={() => choose(today)}><span>Today</span><b aria-hidden="true">↗</b></button>
-        <Calendar month={month} selected={selected} savedDates={savedDates} onMonthChange={setMonth} onSelect={choose} />
+        <WordHeatmap month={month} selected={selected} dayWords={dayWords} onMonthChange={setMonth} onSelect={choose} />
         {settings?.showTagCloud && tags.length > 0 && <ReferenceBrowser references={tags} kind="tag" />}
         {settings?.showTagCloud && people.length > 0 && <ReferenceBrowser references={people} kind="person" />}
         <div className="side-actions">
@@ -1282,7 +1304,7 @@ export default function Journal() {
         <div className="sheet-backdrop" role="presentation" onClick={() => setShowCalendar(false)}>
           <section className="calendar-sheet" role="dialog" aria-modal="true" aria-label="Choose a journal date" onClick={(event) => event.stopPropagation()}>
             <div className="sheet-header"><div><p className="eyebrow">BROWSE JOURNAL</p><h3>Choose a day</h3></div><button type="button" onClick={() => setShowCalendar(false)} aria-label="Close calendar">×</button></div>
-            <Calendar month={month} selected={selected} savedDates={savedDates} onMonthChange={setMonth} onSelect={choose} />
+            <WordHeatmap month={month} selected={selected} dayWords={dayWords} onMonthChange={setMonth} onSelect={choose} />
             {settings?.showTagCloud && tags.length > 0 && <ReferenceBrowser references={tags} kind="tag" />}
             {settings?.showTagCloud && people.length > 0 && <ReferenceBrowser references={people} kind="person" />}
           </section>
