@@ -5,16 +5,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { remarkJournalReferences } from "@/lib/markdown-references";
 import { markdownBody, setLocationFrontMatter } from "@/lib/front-matter";
-import type { DayActivity, DayPhoto, DaySummaryActivity } from "@/lib/day-activity-types";
-import { DEFAULT_WIDGET_LAYOUT, type WidgetLayout } from "@/lib/widget-layout";
+import type { DayPhoto, DaySummaryActivity } from "@/lib/day-activity-types";
+import { DEFAULT_WIDGET_LAYOUT } from "@/lib/widget-layout";
 import { ActivityWidget } from "./widgets/activity-widget";
 import { ArchiveWidget } from "./widgets/archive-widget";
 import { displayDate, fromIso, iso, monthKey } from "./widgets/date-utils";
 import { ImmichWidget, immichImageUrl } from "./widgets/immich-widget";
 import { ReferencesWidget } from "./widgets/references-widget";
-import type { Memory, ReferenceSummary, WidgetPlacement } from "./widgets/types";
-import { WidgetLayoutEditor } from "./widgets/widget-layout-editor";
+import type { Memory, WidgetPlacement } from "./widgets/types";
 import { WordCalendarWidget } from "./widgets/word-calendar-widget";
+import { PhotoLightbox } from "./journal/photo-lightbox";
+import { RevisionsDialog } from "./journal/revisions-dialog";
+import { SettingsDialog } from "./journal/settings-dialog";
+import { unsubscribeCurrentDevice } from "./journal/notification-preferences";
+import { useDayContext } from "./journal/use-day-context";
+import { useJournalReferences } from "./journal/use-journal-references";
+import { useTheme } from "./journal/use-theme";
+import type { JournalSettings } from "./journal/types";
 
 const LiveMarkdownEditor = dynamic(() => import("./live-markdown-editor"), {
   ssr: false,
@@ -28,21 +35,7 @@ type Entry = {
   memories: Memory[];
   template: string;
 };
-type NotificationRule = "always" | "empty";
-type NotificationSchedule = { id: string; enabled: boolean; time: string; weekdays: number[]; rule: NotificationRule; title: string; body: string };
 type CalendarEntry = { date: string; words: number };
-type Settings = {
-  saveFormat: string;
-  template: string;
-  widgetLayout: WidgetLayout;
-  showTagCloud: boolean;
-  vimMode: boolean;
-  autoSave: boolean;
-  autoLocation: boolean;
-  providerOrder: WidgetLayout["context"];
-  notificationTimezone: string;
-  notificationSchedules: NotificationSchedule[];
-};
 type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: string; count?: number };
 type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
 type SaveState = "saved" | "saving" | "unsaved" | "offline";
@@ -153,183 +146,6 @@ function currentPosition() {
   }));
 }
 
-function applicationServerKey(value: string) {
-  const padding = "=".repeat((4 - value.length % 4) % 4);
-  const decoded = atob((value + padding).replaceAll("-", "+").replaceAll("_", "/"));
-  return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
-}
-
-async function currentPushSubscription() {
-  const registration = await navigator.serviceWorker?.getRegistration();
-  return registration ? registration.pushManager.getSubscription() : null;
-}
-
-async function unsubscribeCurrentDevice() {
-  const subscription = await currentPushSubscription();
-  if (!subscription) return;
-  try {
-    await fetch("/api/notifications", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: subscription.endpoint }),
-    });
-  } finally {
-    await subscription.unsubscribe();
-  }
-}
-
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function NotificationPreferences({ settings, onChange }: { settings: Settings; onChange: (settings: Settings) => void }) {
-  const [publicKey, setPublicKey] = useState("");
-  const [status, setStatus] = useState<"checking" | "unsupported" | "unsubscribed" | "subscribed" | "denied" | "error">("checking");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const inspect = useCallback(async () => {
-    if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
-      setStatus("unsupported");
-      return;
-    }
-    if (Notification.permission === "denied") {
-      setStatus("denied");
-      return;
-    }
-    try {
-      const response = await fetch("/api/notifications", { cache: "no-store" });
-      if (!response.ok) throw new Error("Notification setup is unavailable.");
-      const result = await response.json();
-      setPublicKey(result.publicKey);
-      const subscription = await currentPushSubscription();
-      if (subscription) {
-        await fetch("/api/notifications", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subscription: subscription.toJSON() }),
-        });
-      }
-      setStatus(subscription ? "subscribed" : "unsubscribed");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Notification setup is unavailable.");
-      setStatus("error");
-    }
-  }, []);
-
-  useEffect(() => { void inspect(); }, [inspect]);
-
-  const updateSchedule = (id: string, changes: Partial<NotificationSchedule>) => {
-    onChange({ ...settings, notificationSchedules: settings.notificationSchedules.map((schedule) => schedule.id === id ? { ...schedule, ...changes } : schedule) });
-  };
-
-  const subscribe = async () => {
-    setBusy(true);
-    setMessage("");
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") { setStatus(permission === "denied" ? "denied" : "unsubscribed"); return; }
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription() || await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: applicationServerKey(publicKey),
-      });
-      const response = await fetch("/api/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: subscription.toJSON() }),
-      });
-      if (!response.ok) throw new Error((await response.json()).error || "Could not subscribe this device.");
-      setStatus("subscribed");
-      setMessage("This device will receive enabled reminders.");
-    } catch (error) {
-      setStatus("error");
-      setMessage(error instanceof Error ? error.message : "Could not subscribe this device.");
-    } finally { setBusy(false); }
-  };
-
-  const unsubscribe = async () => {
-    setBusy(true);
-    setMessage("");
-    try {
-      await unsubscribeCurrentDevice();
-      setStatus("unsubscribed");
-      setMessage("Notifications are off on this device.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not unsubscribe this device.");
-    } finally { setBusy(false); }
-  };
-
-  const sendTest = async () => {
-    setBusy(true);
-    setMessage("");
-    try {
-      const subscription = await currentPushSubscription();
-      if (!subscription) throw new Error("Subscribe this device first.");
-      const sample = settings.notificationSchedules.find((schedule) => schedule.enabled) || settings.notificationSchedules[0];
-      const response = await fetch("/api/notifications/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: subscription.endpoint, title: sample?.title, body: sample?.body }),
-      });
-      if (!response.ok) throw new Error((await response.json()).error || "Could not send the test notification.");
-      setMessage("Test notification sent.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not send the test notification.");
-    } finally { setBusy(false); }
-  };
-
-  const addReminder = () => onChange({
-    ...settings,
-    notificationSchedules: [...settings.notificationSchedules, {
-      id: crypto.randomUUID(),
-      enabled: true,
-      time: "22:00",
-      weekdays: [0, 1, 2, 3, 4, 5, 6],
-      rule: "always",
-      title: "Time to journal",
-      body: "Add a thought to today’s entry.",
-    }],
-  });
-
-  const statusText = {
-    checking: "Checking this device…",
-    unsupported: "Notifications require HTTPS and a browser with Web Push. On iPhone or iPad, add Paralog to the Home Screen first.",
-    unsubscribed: "Notifications are off on this device.",
-    subscribed: "Notifications are enabled on this device.",
-    denied: "Notification permission is blocked. Re-enable it in your browser or device settings.",
-    error: "Notification status could not be checked.",
-  }[status];
-
-  return <section className="notification-settings" aria-labelledby="notification-settings-title">
-    <div className="notification-heading">
-      <div><p className="eyebrow">REMINDERS</p><h3 id="notification-settings-title">Journal notifications</h3></div>
-      <span className={`notification-state ${status === "subscribed" ? "active" : ""}`}>{status === "subscribed" ? "On" : "Off"}</span>
-    </div>
-    <p className="notification-help">{statusText} Times follow the last device that opened Paralog: <b>{settings.notificationTimezone}</b>.</p>
-    <div className="notification-device-actions">
-      {status === "subscribed"
-        ? <><button type="button" onClick={sendTest} disabled={busy}>Send test</button><button type="button" onClick={unsubscribe} disabled={busy}>Turn off on this device</button></>
-        : <button type="button" className="notification-enable" onClick={subscribe} disabled={busy || !publicKey || status === "unsupported" || status === "denied"}>Enable on this device</button>}
-    </div>
-    {message && <p className="notification-message" role="status">{message}</p>}
-    <div className="reminder-list">
-      {settings.notificationSchedules.map((schedule, index) => <article className="reminder-card" key={schedule.id}>
-        <div className="reminder-card-heading">
-          <label className="toggle-setting"><input type="checkbox" checked={schedule.enabled} onChange={(event) => updateSchedule(schedule.id, { enabled: event.target.checked })} /><span><b>Reminder {index + 1}</b><small>{schedule.enabled ? "Enabled" : "Disabled"}</small></span></label>
-          <button type="button" className="reminder-remove" onClick={() => onChange({ ...settings, notificationSchedules: settings.notificationSchedules.filter((item) => item.id !== schedule.id) })} aria-label={`Delete reminder ${index + 1}`}>Delete</button>
-        </div>
-        <div className="reminder-row">
-          <label>Time<input type="time" value={schedule.time} onChange={(event) => updateSchedule(schedule.id, { time: event.target.value })} /></label>
-          <label>Send when<select value={schedule.rule} onChange={(event) => updateSchedule(schedule.id, { rule: event.target.value as NotificationRule })}><option value="always">Always</option><option value="empty">Today’s entry is empty</option></select></label>
-        </div>
-        <fieldset><legend>Days</legend><div className="weekday-picker">{WEEKDAYS.map((day, dayIndex) => <label key={day}><input type="checkbox" checked={schedule.weekdays.includes(dayIndex)} onChange={(event) => updateSchedule(schedule.id, { weekdays: event.target.checked ? [...schedule.weekdays, dayIndex].sort() : schedule.weekdays.filter((value) => value !== dayIndex) })} /><span>{day}</span></label>)}</div></fieldset>
-        <label>Title<input maxLength={80} value={schedule.title} onChange={(event) => updateSchedule(schedule.id, { title: event.target.value })} /></label>
-        <label>Message<textarea className="reminder-message-input" maxLength={200} value={schedule.body} onChange={(event) => updateSchedule(schedule.id, { body: event.target.value })} /></label>
-      </article>)}
-    </div>
-    <button type="button" className="add-reminder" onClick={addReminder} disabled={settings.notificationSchedules.length >= 10}>+ Add reminder</button>
-  </section>;
-}
-
 export default function Journal() {
   const today = useMemo(() => iso(new Date()), []);
   const [selected, setSelected] = useState(today);
@@ -339,12 +155,9 @@ export default function Journal() {
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [dirty, setDirty] = useState(false);
   const [view, setView] = useState<"rich" | "source" | "preview">("rich");
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [tags, setTags] = useState<ReferenceSummary[]>([]);
-  const [people, setPeople] = useState<ReferenceSummary[]>([]);
-  const [activities, setActivities] = useState<DayActivity[]>([]);
-  const [photos, setPhotos] = useState<DayPhoto[]>([]);
-  const [photoTotal, setPhotoTotal] = useState(0);
+  const [settings, setSettings] = useState<JournalSettings | null>(null);
+  const { tags, people, refreshReferences: loadReferences } = useJournalReferences();
+  const { activities, photos, photoTotal } = useDayContext(selected);
   const [openPhoto, setOpenPhoto] = useState<DayPhoto | null>(null);
   const [loadedPhotoId, setLoadedPhotoId] = useState<string | null>(null);
   const [showOutline, setShowOutline] = useState(false);
@@ -358,8 +171,7 @@ export default function Journal() {
   const [showSettings, setShowSettings] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showAllMemories, setShowAllMemories] = useState(false);
-  const [dark, setDark] = useState(false);
-  const [themeReady, setThemeReady] = useState(false);
+  const { dark, setDark } = useTheme();
   const [online, setOnline] = useState(true);
   const [loading, setLoading] = useState(true);
   const [remoteUpdate, setRemoteUpdate] = useState<Entry | null>(null);
@@ -370,7 +182,6 @@ export default function Journal() {
   const dirtyRef = useRef(dirty);
   const saveStateRef = useRef(saveState);
   const serverContentRef = useRef<string | null>(null);
-  const photoSwipeStartRef = useRef<number | null>(null);
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -418,18 +229,6 @@ export default function Journal() {
       // Regular offline handling owns the connection state.
     }
   }, [applyRemoteEntry]);
-
-  const loadReferences = useCallback(async () => {
-    try {
-      const response = await fetch("/api/references", { cache: "no-store" });
-      if (!response.ok) return;
-      const result = await response.json();
-      setTags(result.tags);
-      setPeople(result.people);
-    } catch {
-      // Keep the last references available when offline.
-    }
-  }, []);
 
   const loadCalendar = useCallback(async (date: Date) => {
     const key = monthKey(date);
@@ -530,9 +329,6 @@ export default function Journal() {
   }, [loadCalendar, month, persistEntry]);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("paralog-theme");
-    setDark(savedTheme === "dark" || (!savedTheme && matchMedia("(prefers-color-scheme: dark)").matches));
-    setThemeReady(true);
     setOnline(navigator.onLine);
     fetch("/api/settings").then((response) => response.ok ? response.json() : null).then(setSettings).catch(() => undefined);
     loadReferences();
@@ -550,12 +346,6 @@ export default function Journal() {
       if (value) setSettings((current) => current ? { ...current, notificationTimezone: value.notificationTimezone } : value);
     }).catch(() => undefined);
   }, [settings]);
-
-  useEffect(() => {
-    if (!themeReady) return;
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
-    localStorage.setItem("paralog-theme", dark ? "dark" : "light");
-  }, [dark, themeReady]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -720,33 +510,7 @@ export default function Journal() {
     return () => controller.abort();
   }, [loadEntry, selected]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setActivities([]);
-    setPhotos([]);
-    setPhotoTotal(0);
-    setOpenPhoto(null);
-    if (!navigator.onLine) return () => controller.abort();
-    const selectedDate = fromIso(selected);
-    const nextDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1);
-    const params = new URLSearchParams({
-      date: selected,
-      utcOffset: String(selectedDate.getTimezoneOffset()),
-      nextUtcOffset: String(nextDate.getTimezoneOffset()),
-    });
-    fetch(`/api/activity?${params}`, { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() : null)
-      .then((result) => {
-        if (!Array.isArray(result?.activities)) return;
-        setActivities(result.activities);
-        const photoActivity = result.activities.find((activity: DayActivity) => activity.kind === "photos");
-        if (!photoActivity || photoActivity.kind !== "photos") return;
-        setPhotos(photoActivity.photos);
-        setPhotoTotal(photoActivity.total);
-      })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [selected]);
+  useEffect(() => { setOpenPhoto(null); }, [selected]);
 
   useEffect(() => {
     setLoadedPhotoId(null);
@@ -1104,85 +868,31 @@ export default function Journal() {
         </div>
       )}
 
-      {showSettings && settings && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setShowSettings(false)}>
-          <section className="settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(event) => event.stopPropagation()}>
-            <div className="settings-title"><div><p className="eyebrow">PREFERENCES</p><h2 id="settings-title">Journal settings</h2></div><button type="button" onClick={() => setShowSettings(false)} aria-label="Close settings">×</button></div>
-            <label>Save format<small>Tokens: YYYY, MM, MMMM, DD, dddd. Existing files stay where they are.</small><input value={settings.saveFormat} onChange={(event) => setSettings({ ...settings, saveFormat: event.target.value })} /></label>
-            <label>New entry template<small>Use any Markdown you want as a starting point.</small><textarea value={settings.template} onChange={(event) => setSettings({ ...settings, template: event.target.value })} /></label>
-            <WidgetLayoutEditor layout={settings.widgetLayout} onChange={(widgetLayout) => setSettings({ ...settings, widgetLayout })} />
-            <label className="toggle-setting"><input type="checkbox" checked={settings.autoSave} onChange={(event) => setSettings({ ...settings, autoSave: event.target.checked })} /><span><b>Automatically save entries</b><small>Save after you pause typing. You can always save immediately with Ctrl+S or Cmd+S.</small></span></label>
-            <label className="toggle-setting"><input type="checkbox" checked={settings.autoLocation} onChange={(event) => setSettings({ ...settings, autoLocation: event.target.checked })} /><span><b>Add location to new entries</b><small>When you begin writing on an empty day, request your location and add the nearest city, state, and country to its metadata.</small></span></label>
-            <label className="toggle-setting"><input type="checkbox" checked={settings.vimMode} onChange={(event) => setSettings({ ...settings, vimMode: event.target.checked })} /><span><b>Vim keybindings</b><small>Enable Normal, Insert, and Visual modes in the Live Preview editor on desktop. Mobile always uses standard editing.</small></span></label>
-            <NotificationPreferences settings={settings} onChange={setSettings} />
-            <div className="settings-actions"><button className="text-button" type="button" onClick={signOut}>Sign out</button><button className="save-button" type="button" onClick={persistSettings} disabled={!online}>Save settings</button></div>
-          </section>
-        </div>
-      )}
+      {showSettings && settings && <SettingsDialog
+        settings={settings}
+        online={online}
+        onChange={setSettings}
+        onClose={() => setShowSettings(false)}
+        onSave={persistSettings}
+        onSignOut={signOut}
+      />}
 
-      {showRevisions && <div className="modal-backdrop" role="presentation" onClick={() => setShowRevisions(false)}>
-        <section className="revisions-panel" role="dialog" aria-modal="true" aria-labelledby="revisions-title" onClick={(event) => event.stopPropagation()}>
-          <div className="settings-title"><div><p className="eyebrow">ENTRY HISTORY</p><h2 id="revisions-title">Previous versions</h2></div><button type="button" onClick={() => setShowRevisions(false)} aria-label="Close versions">×</button></div>
-          {revisionsLoading ? <p className="panel-empty">Loading versions…</p> : revisions.length === 0 ? <p className="panel-empty">No previous versions yet. Paralog creates one when saved content changes.</p> : <div className="revision-list">
-            {revisions.map((revision, index) => <article key={revision.id}>
-              <div className="revision-meta">
-                <strong>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(revision.createdAt))}</strong>
-                <small>{revision.words} {revision.words === 1 ? "word" : "words"}</small>
-                <span className="revision-additions">+{revision.diff.additions}</span>
-                <span className="revision-deletions">−{revision.diff.deletions}</span>
-              </div>
-              <details open={index === 0}>
-                <summary>View changes</summary>
-                <div className="revision-diff" aria-label="Changes made after this version">
-                  {revision.diff.lines.map((line, lineIndex) => line.type === "skip"
-                    ? <div className="diff-skip" key={`${revision.id}-line-${lineIndex}`}>⋯ {line.count} unchanged {line.count === 1 ? "line" : "lines"}</div>
-                    : <div className={`diff-line diff-${line.type}`} aria-label={`${line.type === "added" ? "Added" : line.type === "removed" ? "Removed" : "Unchanged"}: ${line.text || "blank line"}`} key={`${revision.id}-line-${lineIndex}`}>
-                      <span aria-hidden="true">{line.type === "added" ? "+" : line.type === "removed" ? "−" : " "}</span><code>{line.text || " "}</code>
-                    </div>)}
-                </div>
-              </details>
-              <button type="button" onClick={() => restoreRevision(revision.id)}>Restore this version</button>
-            </article>)}
-          </div>}
-        </section>
-      </div>}
+      {showRevisions && <RevisionsDialog
+        revisions={revisions}
+        loading={revisionsLoading}
+        onClose={() => setShowRevisions(false)}
+        onRestore={restoreRevision}
+      />}
 
-      {openPhoto && <div className="photo-lightbox-backdrop" role="presentation" onClick={() => setOpenPhoto(null)}>
-        <section
-          className="photo-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Large photo from ${displayDate(selected)}`}
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => {
-            if (event.pointerType === "mouse" && event.button !== 0) return;
-            photoSwipeStartRef.current = event.clientX;
-          }}
-          onPointerUp={(event) => {
-            const start = photoSwipeStartRef.current;
-            photoSwipeStartRef.current = null;
-            if (start === null || photos.length < 2) return;
-            const distance = event.clientX - start;
-            if (Math.abs(distance) >= 48) moveOpenPhoto(distance < 0 ? 1 : -1);
-          }}
-          onPointerCancel={() => { photoSwipeStartRef.current = null; }}
-        >
-          <button type="button" className="photo-lightbox-close" onClick={() => setOpenPhoto(null)} aria-label="Close photo">×</button>
-          <img
-            className={`photo-lightbox-image ${loadedPhotoId === openPhoto.id ? "loaded" : ""}`}
-            src={immichImageUrl(openPhoto.id, "preview")}
-            alt={`Photo from ${displayDate(selected)}`}
-            decoding="async"
-            draggable={false}
-            onLoad={() => setLoadedPhotoId(openPhoto.id)}
-          />
-          {photos.length > 1 && <>
-            <button type="button" className="photo-lightbox-nav previous" onClick={() => moveOpenPhoto(-1)} aria-label="Previous photo">←</button>
-            <span className="photo-lightbox-position" aria-live="polite">{photos.findIndex((photo) => photo.id === openPhoto.id) + 1} / {photos.length}</span>
-            <button type="button" className="photo-lightbox-nav next" onClick={() => moveOpenPhoto(1)} aria-label="Next photo">→</button>
-          </>}
-        </section>
-      </div>}
+      {openPhoto && <PhotoLightbox
+        photo={openPhoto}
+        photos={photos}
+        selected={selected}
+        loadedPhotoId={loadedPhotoId}
+        onLoaded={setLoadedPhotoId}
+        onClose={() => setOpenPhoto(null)}
+        onMove={moveOpenPhoto}
+      />}
     </main>
   );
 }

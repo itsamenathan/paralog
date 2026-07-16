@@ -1,65 +1,5 @@
-/* Alucard (light) and Dracula (dark) palettes. */
-:root {
-  color-scheme: light;
-  --ink: #1f1f1f;
-  --muted: #6c664b;
-  --paper: #fffbeb;
-  --surface: #fffef7;
-  --surface-raised: #ffffff;
-  --line: #d9d4bd;
-  --line-strong: #b9b18f;
-  --accent: #a3144d;
-  --accent-soft: #f5dde7;
-  --button: #644ac9;
-  --button-hover: #5239b5;
-  --success: #14710a;
-  --heat-1: color-mix(in srgb, var(--accent) 24%, var(--paper));
-  --heat-2: color-mix(in srgb, var(--accent) 46%, var(--paper));
-  --heat-3: color-mix(in srgb, var(--accent) 72%, var(--paper));
-  --heat-4: var(--accent);
-  --danger: #a92323;
-  --warning: #a34d14;
-  --mobile-keyboard-height: 0px;
-  --mobile-keyboard-offset: 0px;
-  --editor-min-height: clamp(220px, 30vh, 280px);
-  --shadow: 0 18px 48px rgba(60, 49, 21, 0.12);
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --ink: #f8f8f2;
-  --muted: #a7b0d6;
-  --paper: #282a36;
-  --surface: #303240;
-  --surface-raised: #383a4a;
-  --line: #44475a;
-  --line-strong: #6272a4;
-  --accent: #ff79c6;
-  --accent-soft: #51374d;
-  --button: #bd93f9;
-  --button-hover: #caa7fb;
-  --success: #50fa7b;
-  --danger: #ff5555;
-  --warning: #ffb86c;
-  --shadow: 0 20px 55px rgba(0, 0, 0, 0.28);
-}
-
-* { box-sizing: border-box; }
-html { background: var(--paper); }
-body {
-  margin: 0;
-  min-width: 320px;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-button, input, textarea { font: inherit; }
-button { cursor: pointer; }
-button:focus-visible, input:focus-visible, textarea:focus-visible, [role="radio"]:focus-visible, [role="combobox"]:focus-visible {
-  outline: 2px solid var(--button) !important;
-  outline-offset: 2px;
-}
+@import "../styles/theme.css";
+@import "../styles/pages.css";
 
 .app-shell { min-height: 100dvh; display: grid; grid-template-columns: 282px minmax(0, 1fr); }
 .sidebar {
@@ -557,30 +497,6 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 .sheet-header h3 { margin: 0; font-size: 25px; }
 .calendar-sheet .word-heatmap { --heatmap-cell: 38px; max-width: 380px; margin: 0 auto; }
 .calendar-sheet .heatmap-cell { border-radius: 9px; font-size: 13px; }
-
-.login-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
-.login-page form { width: min(390px, 100%); display: grid; gap: 19px; padding: 36px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); box-shadow: var(--shadow); }
-.login-page h1 { margin: 0; font: 600 43px/1 "Iowan Old Style", Georgia, serif; letter-spacing: -.04em; }
-.setup-message, .error { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.error { color: var(--accent); }
-.setup-message code { padding: 2px 4px; border-radius: 4px; background: var(--paper); }
-
-.tag-page { width: min(900px, 100%); min-height: 100dvh; margin: 0 auto; padding: 56px clamp(22px, 6vw, 72px) 80px; }
-.tag-page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; padding-bottom: 26px; border-bottom: 1px solid var(--line); }
-.tag-page-header h1 { margin: 0; color: var(--accent); font: 600 clamp(38px, 6vw, 58px)/1 "Iowan Old Style", Georgia, serif; letter-spacing: -.045em; }
-.tag-page-header p:last-child { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
-.tag-page-header > a { min-height: 39px; display: inline-flex; align-items: center; padding: 0 13px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font-size: 12px; font-weight: 650; text-decoration: none; white-space: nowrap; }
-.tag-page-header > a:hover { border-color: var(--line-strong); background: var(--surface); }
-.tag-entry-list { display: grid; gap: 11px; padding-top: 24px; }
-.tag-entry-card { display: grid; gap: 9px; padding: 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--ink); text-decoration: none; }
-.tag-entry-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
-.tag-entry-date { color: var(--accent); font: 650 10px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .06em; }
-.tag-entry-card strong { font: 500 18px/1.5 "Iowan Old Style", Georgia, serif; }
-.tag-entry-card small { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 10px; }
-.tag-entry-card small b { color: var(--button); }
-.tag-empty { padding: 60px 0; text-align: center; }
-.tag-empty h2 { margin: 0 0 8px; font-size: 28px; }
-.tag-empty p { color: var(--muted); }
 
 @media (max-width: 980px) {
   .app-shell { grid-template-columns: 248px minmax(0, 1fr); }

@@ -1,0 +1,23 @@
+.login-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.login-page form { width: min(390px, 100%); display: grid; gap: 19px; padding: 36px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); box-shadow: var(--shadow); }
+.login-page h1 { margin: 0; font: 600 43px/1 "Iowan Old Style", Georgia, serif; letter-spacing: -.04em; }
+.setup-message, .error { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.error { color: var(--accent); }
+.setup-message code { padding: 2px 4px; border-radius: 4px; background: var(--paper); }
+
+.tag-page { width: min(900px, 100%); min-height: 100dvh; margin: 0 auto; padding: 56px clamp(22px, 6vw, 72px) 80px; }
+.tag-page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; padding-bottom: 26px; border-bottom: 1px solid var(--line); }
+.tag-page-header h1 { margin: 0; color: var(--accent); font: 600 clamp(38px, 6vw, 58px)/1 "Iowan Old Style", Georgia, serif; letter-spacing: -.045em; }
+.tag-page-header p:last-child { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+.tag-page-header > a { min-height: 39px; display: inline-flex; align-items: center; padding: 0 13px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font-size: 12px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+.tag-page-header > a:hover { border-color: var(--line-strong); background: var(--surface); }
+.tag-entry-list { display: grid; gap: 11px; padding-top: 24px; }
+.tag-entry-card { display: grid; gap: 9px; padding: 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--ink); text-decoration: none; }
+.tag-entry-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.tag-entry-date { color: var(--accent); font: 650 10px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .06em; }
+.tag-entry-card strong { font: 500 18px/1.5 "Iowan Old Style", Georgia, serif; }
+.tag-entry-card small { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 10px; }
+.tag-entry-card small b { color: var(--button); }
+.tag-empty { padding: 60px 0; text-align: center; }
+.tag-empty h2 { margin: 0 0 8px; font-size: 28px; }
+.tag-empty p { color: var(--muted); }
