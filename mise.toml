@@ -13,6 +13,10 @@ run = "node node_modules/next/dist/bin/next dev --hostname 0.0.0.0"
 description = "Create a production build"
 run = "npm run build"
 
+[tasks.test]
+description = "Run migration, widget, and feature behavior tests"
+run = "npm test"
+
 [tasks.start]
 description = "Serve the production build"
 run = "npm run start"

@@ -8,6 +8,9 @@ import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
 import { journalReferences } from "@/lib/markdown-references";
+import { exitEmptyMarkdownBlock, keepMobileCursorVisible } from "@/lib/editor/commands";
+import { EditorToolbar } from "./editor/editor-toolbar";
+import { SuggestionMenu, type SuggestionMenuItem } from "./editor/suggestion-menu";
 import {
   Decoration,
   EditorView,
@@ -253,33 +256,6 @@ const referenceNavigation = EditorView.domEventHandlers({
   },
 });
 
-const exitEmptyMarkdownBlock = ({ state, dispatch }: { state: EditorState; dispatch: (transaction: ReturnType<EditorState["update"]>) => void }) => {
-  const selection = state.selection.main;
-  if (!selection.empty) return false;
-  const line = state.doc.lineAt(selection.head);
-  const afterCursor = state.doc.sliceString(selection.head, line.to);
-  if (!/^\s*$/.test(afterCursor) || !/^\s*(?:(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s*)?|>\s*)$/.test(line.text)) return false;
-  dispatch(state.update({ changes: { from: line.from, to: line.to, insert: "" }, selection: { anchor: line.from } }));
-  return true;
-};
-
-function keepMobileCursorVisible(view: EditorView) {
-  const viewport = window.visualViewport;
-  if (!viewport || window.innerWidth > 720 || !view.hasFocus) return;
-  const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
-  const trackedInset = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--mobile-keyboard-height")) || 0;
-  if (Math.max(trackedInset, layoutHeight - viewport.height - viewport.offsetTop) <= 80) return;
-  window.requestAnimationFrame(() => {
-    const selection = view.state.selection.main;
-    const cursor = view.coordsAtPos(selection.head);
-    if (!cursor) return;
-    const visibleTop = viewport.offsetTop + 170;
-    const visibleBottom = viewport.offsetTop + viewport.height - (selection.empty ? 28 : 82);
-    if (cursor.bottom > visibleBottom) window.scrollBy({ top: cursor.bottom - visibleBottom, behavior: "auto" });
-    else if (cursor.top < visibleTop) window.scrollBy({ top: cursor.top - visibleTop, behavior: "auto" });
-  });
-}
-
 type LiveMarkdownEditorProps = {
   markdown: string;
   onChange: (markdown: string) => void;
@@ -294,7 +270,6 @@ type LiveMarkdownEditorProps = {
 
 type ReferenceSuggestion = { name: string; count: number };
 type ReferenceQuery = { kind: "tag" | "person"; query: string; from: number; to: number };
-type SuggestionMenuItem = { label: string; hint: string; run: () => void };
 
 export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, template, jumpToLine, onJumpHandled, vimMode, tags, people }: LiveMarkdownEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -650,39 +625,26 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
   }, [menuItems.length, normalizedReferenceQuery, referenceQuery?.kind, slashQuery]);
 
   return <div className="live-markdown-editor">
-    <div className="live-toolbar" role="toolbar" aria-label="Markdown formatting">
-      <button type="button" aria-label="Undo" title="Undo" onClick={() => editor.current && undo(editor.current)}>↶</button>
-      <button type="button" aria-label="Redo" title="Redo" onClick={() => editor.current && redo(editor.current)}>↷</button>
-      <span className="toolbar-divider" />
-      <button type="button" aria-label="Heading" title="Heading" onClick={() => prefixLine("## ")}>H</button>
-      <button type="button" aria-label="Bold" title="Bold" className="toolbar-bold" onClick={() => wrap("**")}>B</button>
-      <button type="button" aria-label="Italic" title="Italic" className="toolbar-italic" onClick={() => wrap("*")}>I</button>
-      <button type="button" aria-label="Inline code" title="Inline code" onClick={() => wrap("`")}>{"<>"}</button>
-      <button type="button" aria-label="Link" title="Link" onClick={() => setShowLinkInput(true)}>↗</button>
-      <button type="button" aria-label="Bulleted list" title="Bulleted list" onClick={() => prefixLine("- ")}>•≡</button>
-      <button type="button" aria-label="Quote" title="Quote" onClick={() => prefixLine("> ")}>❞</button>
-      <button type="button" aria-label="Find and replace" title="Find and replace" onClick={() => editor.current && openSearchPanel(editor.current)}>⌕</button>
-      <span className="toolbar-hint">Markdown stays Markdown</span>
-      {uploading && <span className="toolbar-status">Uploading…</span>}
-      {uploadError && <span className="toolbar-status error">{uploadError}</span>}
-    </div>
+    <EditorToolbar
+      uploading={uploading}
+      uploadError={uploadError}
+      onUndo={() => { if (editor.current) undo(editor.current); }}
+      onRedo={() => { if (editor.current) redo(editor.current); }}
+      onHeading={() => prefixLine("## ")}
+      onBold={() => wrap("**")}
+      onItalic={() => wrap("*")}
+      onCode={() => wrap("`")}
+      onLink={() => setShowLinkInput(true)}
+      onList={() => prefixLine("- ")}
+      onQuote={() => prefixLine("> ")}
+      onSearch={() => { if (editor.current) openSearchPanel(editor.current); }}
+    />
     {showLinkInput && <form className="link-insert" onSubmit={(event) => { event.preventDefault(); applyLink(); }}>
       <input autoFocus type="text" inputMode="url" placeholder="https://example.com" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} />
       <button type="submit">Insert link</button>
       <button type="button" aria-label="Cancel link" onClick={() => setShowLinkInput(false)}>×</button>
     </form>}
-    {menuItems.length > 0 && <div ref={menuRef} className="slash-menu" role="menu" aria-label={menuLabel}>
-      {menuItems.map((item, index) => <button
-        type="button"
-        role="menuitem"
-        className={index === menuIndex ? "active" : ""}
-        aria-current={index === menuIndex ? "true" : undefined}
-        key={item.label}
-        onMouseDown={(event) => event.preventDefault()}
-        onMouseEnter={() => selectMenuIndex(index)}
-        onClick={item.run}
-      ><b>{item.label}</b><span>{item.hint}</span></button>)}
-    </div>}
+    <SuggestionMenu menuRef={menuRef} items={menuItems} activeIndex={menuIndex} label={menuLabel} onActiveIndexChange={selectMenuIndex} />
     <div ref={host} className="live-editor-host" />
     {hasSelection && <div className="mobile-selection-toolbar" role="toolbar" aria-label="Format selected text">
       <button type="button" aria-label="Bold selection" onClick={() => wrap("**")}>B</button>

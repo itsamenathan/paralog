@@ -9,7 +9,9 @@
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
     "test:migrations": "node --test scripts/test-migrations.mjs",
-    "test:widgets": "node --no-warnings --test scripts/test-widget-layout.mjs"
+    "test:widgets": "node --no-warnings --test scripts/test-widget-layout.mjs",
+    "test:features": "node --no-warnings --test scripts/test-maintainability.mjs",
+    "test": "npm run test:migrations && npm run test:widgets && npm run test:features"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "6.5.0",
