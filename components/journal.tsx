@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { remarkJournalReferences } from "@/lib/markdown-references";
 import { markdownBody, setLocationFrontMatter } from "@/lib/front-matter";
+import type { DayActivity, DayPhoto, DaySummaryActivity } from "@/lib/day-activity-types";
 
 const LiveMarkdownEditor = dynamic(() => import("./live-markdown-editor"), {
   ssr: false,
@@ -21,6 +22,7 @@ type Entry = {
 };
 type NotificationRule = "always" | "empty";
 type NotificationSchedule = { id: string; enabled: boolean; time: string; weekdays: number[]; rule: NotificationRule; title: string; body: string };
+type ProviderId = "github" | "immich" | "archive";
 type Settings = {
   saveFormat: string;
   template: string;
@@ -28,11 +30,11 @@ type Settings = {
   vimMode: boolean;
   autoSave: boolean;
   autoLocation: boolean;
+  providerOrder: ProviderId[];
   notificationTimezone: string;
   notificationSchedules: NotificationSchedule[];
 };
 type ReferenceSummary = { name: string; count: number; dates: string[] };
-type ImmichPhoto = { id: string; width: number | null; height: number | null; capturedAt: string | null };
 type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: string; count?: number };
 type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
 type SaveState = "saved" | "saving" | "unsaved" | "offline";
@@ -60,6 +62,7 @@ const EMPTY_ENTRY: Entry = {
 };
 const ENTRY_CACHE = "paralog:entry:";
 const CALENDAR_CACHE = "paralog:calendar:";
+const PROVIDER_LABELS: Record<ProviderId, string> = { github: "GitHub", immich: "Immich", archive: "Your archive" };
 
 const iso = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -294,11 +297,11 @@ function MemoryShelf({ memories, selected, expanded, placement, onToggle, onChoo
 }
 
 function PhotoShelf({ photos, total, selected, placement, onOpen }: {
-  photos: ImmichPhoto[];
+  photos: DayPhoto[];
   total: number;
   selected: string;
   placement: "desktop" | "mobile";
-  onOpen: (photo: ImmichPhoto) => void;
+  onOpen: (photo: DayPhoto) => void;
 }) {
   if (photos.length === 0) return null;
   const titleId = `photo-title-${placement}`;
@@ -316,6 +319,22 @@ function PhotoShelf({ photos, total, selected, placement, onOpen }: {
           decoding="async"
         />
       </button>)}
+    </div>
+  </section>;
+}
+
+function ActivitySummaryShelf({ activity, placement }: { activity: DaySummaryActivity; placement: "desktop" | "mobile" }) {
+  if (activity.total === 0) return null;
+  const titleId = `activity-${activity.provider}-${placement}`;
+  return <section className={`activity-shelf activity-shelf-${placement}`} aria-labelledby={titleId}>
+    <div className="activity-heading"><div><p className="eyebrow">FROM {activity.source.toUpperCase()}</p><h3 id={titleId}>{activity.title}</h3></div><span>{activity.totalLabel}</span></div>
+    <div className="activity-list">
+      {activity.items.map((item) => {
+        const contents = <><span>{item.label}</span><b>{item.count} {item.count === 1 ? activity.itemUnit.singular : activity.itemUnit.plural}</b></>;
+        return item.url
+          ? <a key={item.id} href={item.url} target="_blank" rel="noreferrer">{contents}</a>
+          : <div key={item.id}>{contents}</div>;
+      })}
     </div>
   </section>;
 }
@@ -482,11 +501,13 @@ export default function Journal() {
   const [dirty, setDirty] = useState(false);
   const [view, setView] = useState<"rich" | "source" | "preview">("rich");
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [draggingProvider, setDraggingProvider] = useState<ProviderId | null>(null);
   const [tags, setTags] = useState<ReferenceSummary[]>([]);
   const [people, setPeople] = useState<ReferenceSummary[]>([]);
-  const [photos, setPhotos] = useState<ImmichPhoto[]>([]);
+  const [activities, setActivities] = useState<DayActivity[]>([]);
+  const [photos, setPhotos] = useState<DayPhoto[]>([]);
   const [photoTotal, setPhotoTotal] = useState(0);
-  const [openPhoto, setOpenPhoto] = useState<ImmichPhoto | null>(null);
+  const [openPhoto, setOpenPhoto] = useState<DayPhoto | null>(null);
   const [loadedPhotoId, setLoadedPhotoId] = useState<string | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showRevisions, setShowRevisions] = useState(false);
@@ -512,6 +533,7 @@ export default function Journal() {
   const saveStateRef = useRef(saveState);
   const serverContentRef = useRef<string | null>(null);
   const photoSwipeStartRef = useRef<number | null>(null);
+  const draggingProviderRef = useRef<ProviderId | null>(null);
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -856,16 +878,27 @@ export default function Journal() {
 
   useEffect(() => {
     const controller = new AbortController();
+    setActivities([]);
     setPhotos([]);
     setPhotoTotal(0);
     setOpenPhoto(null);
     if (!navigator.onLine) return () => controller.abort();
-    fetch(`/api/immich?date=${selected}`, { cache: "no-store", signal: controller.signal })
+    const selectedDate = fromIso(selected);
+    const nextDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1);
+    const params = new URLSearchParams({
+      date: selected,
+      utcOffset: String(selectedDate.getTimezoneOffset()),
+      nextUtcOffset: String(nextDate.getTimezoneOffset()),
+    });
+    fetch(`/api/activity?${params}`, { cache: "no-store", signal: controller.signal })
       .then((response) => response.ok ? response.json() : null)
       .then((result) => {
-        if (!result?.configured || !Array.isArray(result.photos)) return;
-        setPhotos(result.photos);
-        setPhotoTotal(typeof result.total === "number" ? result.total : result.photos.length);
+        if (!Array.isArray(result?.activities)) return;
+        setActivities(result.activities);
+        const photoActivity = result.activities.find((activity: DayActivity) => activity.kind === "photos");
+        if (!photoActivity || photoActivity.kind !== "photos") return;
+        setPhotos(photoActivity.photos);
+        setPhotoTotal(photoActivity.total);
       })
       .catch(() => undefined);
     return () => controller.abort();
@@ -1063,6 +1096,52 @@ export default function Journal() {
     if (response.ok) { setSettings(await response.json()); setShowSettings(false); }
   }
 
+  function moveProvider(provider: ProviderId, offset: -1 | 1) {
+    setSettings((current) => {
+      if (!current) return current;
+      const index = current.providerOrder.indexOf(provider);
+      const target = index + offset;
+      if (index < 0 || target < 0 || target >= current.providerOrder.length) return current;
+      const providerOrder = [...current.providerOrder];
+      [providerOrder[index], providerOrder[target]] = [providerOrder[target], providerOrder[index]];
+      return { ...current, providerOrder };
+    });
+  }
+
+  function placeProvider(provider: ProviderId, target: ProviderId) {
+    if (provider === target) return;
+    setSettings((current) => {
+      if (!current) return current;
+      const from = current.providerOrder.indexOf(provider);
+      const to = current.providerOrder.indexOf(target);
+      if (from < 0 || to < 0) return current;
+      const providerOrder = [...current.providerOrder];
+      providerOrder.splice(from, 1);
+      providerOrder.splice(to, 0, provider);
+      return { ...current, providerOrder };
+    });
+  }
+
+  function startProviderDrag(provider: ProviderId) {
+    draggingProviderRef.current = provider;
+    setDraggingProvider(provider);
+  }
+
+  function finishProviderDrag() {
+    draggingProviderRef.current = null;
+    setDraggingProvider(null);
+  }
+
+  function dailyContext(placement: "desktop" | "mobile") {
+    const order = settings?.providerOrder || ["immich", "archive", "github"];
+    return order.map((provider) => {
+      if (provider === "immich") return <PhotoShelf key={provider} photos={photos} total={photoTotal} selected={selected} placement={placement} onOpen={setOpenPhoto} />;
+      if (provider === "archive") return <MemoryShelf key={provider} memories={entry.memories} selected={selected} expanded={showAllMemories} placement={placement} onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />;
+      const activity = activities.find((item): item is DaySummaryActivity => item.kind === "summary" && item.provider === provider);
+      return activity ? <ActivitySummaryShelf key={provider} activity={activity} placement={placement} /> : null;
+    });
+  }
+
   async function signOut() {
     try { await unsubscribeCurrentDevice(); } catch { /* Signing out still clears the authenticated session. */ }
     await fetch("/api/auth/logout", { method: "POST" });
@@ -1192,13 +1271,11 @@ export default function Journal() {
           {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} />}
         </div>
         </div>
-        <aside className="entry-context-column" aria-label="Photos and archive memories">
-        <PhotoShelf photos={photos} total={photoTotal} selected={selected} placement="desktop" onOpen={setOpenPhoto} />
-        <MemoryShelf memories={entry.memories} selected={selected} expanded={showAllMemories} placement="desktop" onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />
+        <aside className="entry-context-column" aria-label="Daily activity and archive memories">
+        {dailyContext("desktop")}
         </aside>
         </div>
-        <PhotoShelf photos={photos} total={photoTotal} selected={selected} placement="mobile" onOpen={setOpenPhoto} />
-        <MemoryShelf memories={entry.memories} selected={selected} expanded={showAllMemories} placement="mobile" onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />
+        {dailyContext("mobile")}
       </section>
 
       {showCalendar && (
@@ -1218,6 +1295,49 @@ export default function Journal() {
             <div className="settings-title"><div><p className="eyebrow">PREFERENCES</p><h2 id="settings-title">Journal settings</h2></div><button type="button" onClick={() => setShowSettings(false)} aria-label="Close settings">×</button></div>
             <label>Save format<small>Tokens: YYYY, MM, MMMM, DD, dddd. Existing files stay where they are.</small><input value={settings.saveFormat} onChange={(event) => setSettings({ ...settings, saveFormat: event.target.value })} /></label>
             <label>New entry template<small>Use any Markdown you want as a starting point.</small><textarea value={settings.template} onChange={(event) => setSettings({ ...settings, template: event.target.value })} /></label>
+            <fieldset className="provider-order"><legend>Daily context order</legend><small>Drag the handles to choose the order of cards below your editor and in the desktop context column.</small>
+              <div>{settings.providerOrder.map((provider, index) => <div
+                className={`provider-order-row ${draggingProvider === provider ? "dragging" : ""}`}
+                data-provider={provider}
+                draggable
+                key={provider}
+                onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", provider); startProviderDrag(provider); }}
+                onDragEnter={() => { const dragging = draggingProviderRef.current; if (dragging) placeProvider(dragging, provider); }}
+                onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
+                onDrop={(event) => { event.preventDefault(); finishProviderDrag(); }}
+                onDragEnd={finishProviderDrag}
+              >
+                <span><b>{index + 1}</b>{PROVIDER_LABELS[provider]}</span>
+                <button
+                  type="button"
+                  className="provider-drag-handle"
+                  draggable
+                  aria-label={`Reorder ${PROVIDER_LABELS[provider]}`}
+                  aria-pressed={draggingProvider === provider}
+                  title={`Drag to reorder ${PROVIDER_LABELS[provider]}`}
+                  onKeyDown={(event) => {
+                    if (event.key === " " || event.key === "Enter") { event.preventDefault(); draggingProvider === provider ? finishProviderDrag() : startProviderDrag(provider); }
+                    else if (draggingProvider === provider && (event.key === "ArrowUp" || event.key === "ArrowDown")) { event.preventDefault(); moveProvider(provider, event.key === "ArrowUp" ? -1 : 1); }
+                    else if (draggingProvider === provider && event.key === "Escape") { event.preventDefault(); finishProviderDrag(); }
+                  }}
+                  onPointerDown={(event) => {
+                    if (event.pointerType === "mouse") return;
+                    event.preventDefault();
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    startProviderDrag(provider);
+                  }}
+                  onPointerMove={(event) => {
+                    if (!draggingProviderRef.current || event.pointerType === "mouse") return;
+                    event.preventDefault();
+                    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-provider]")?.dataset.provider as ProviderId | undefined;
+                    if (target && target in PROVIDER_LABELS) placeProvider(draggingProviderRef.current, target);
+                  }}
+                  onPointerUp={finishProviderDrag}
+                  onPointerCancel={finishProviderDrag}
+                ><span aria-hidden="true">⠿</span></button>
+              </div>)}</div>
+              <p className="provider-order-status" aria-live="polite">{draggingProvider ? `${PROVIDER_LABELS[draggingProvider]} picked up. Drag it, or use the arrow keys, then press Enter to drop.` : ""}</p>
+            </fieldset>
             <label className="toggle-setting"><input type="checkbox" checked={settings.showTagCloud} onChange={(event) => setSettings({ ...settings, showTagCloud: event.target.checked })} /><span><b>Show tags and people</b><small>Collect hashtags and @mentions from your entries in the desktop sidebar and mobile calendar.</small></span></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.autoSave} onChange={(event) => setSettings({ ...settings, autoSave: event.target.checked })} /><span><b>Automatically save entries</b><small>Save after you pause typing. You can always save immediately with Ctrl+S or Cmd+S.</small></span></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.autoLocation} onChange={(event) => setSettings({ ...settings, autoLocation: event.target.checked })} /><span><b>Add location to new entries</b><small>When you begin writing on an empty day, request your location and add the nearest city, state, and country to its metadata.</small></span></label>

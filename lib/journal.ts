@@ -10,6 +10,8 @@ import { journalReferences, type JournalReference } from "@/lib/markdown-referen
 
 export { dataDir } from "@/lib/db";
 const defaultFormat = "YYYY/MM-MMMM/YYYY-MM-DD-dddd.md";
+const defaultProviderOrder = ["immich", "archive", "github"] as const;
+type ProviderId = typeof defaultProviderOrder[number];
 
 function parts(date: string) {
   const [year, month, day] = date.split("-").map(Number);
@@ -18,8 +20,15 @@ function parts(date: string) {
 }
 
 function setting(key: string, fallback: string) { return db().select({ value: settingsTable.value }).from(settingsTable).where(eq(settingsTable.key, key)).get()?.value || fallback; }
-export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", ""), showTagCloud: setting("showTagCloud", "true") !== "false", vimMode: setting("vimMode", "false") === "true", autoSave: setting("autoSave", "true") !== "false", autoLocation: setting("autoLocation", "false") === "true" }; }
-export function updateSettings(values: { saveFormat?: string; template?: string; showTagCloud?: boolean; vimMode?: boolean; autoSave?: boolean; autoLocation?: boolean }) {
+function providerOrder(): ProviderId[] {
+  try {
+    const value = JSON.parse(setting("providerOrder", JSON.stringify(defaultProviderOrder)));
+    if (Array.isArray(value) && value.length === defaultProviderOrder.length && defaultProviderOrder.every((provider) => value.includes(provider))) return value;
+  } catch { /* Fall back to the default order. */ }
+  return [...defaultProviderOrder];
+}
+export function settings() { return { saveFormat: setting("saveFormat", defaultFormat), template: setting("template", ""), showTagCloud: setting("showTagCloud", "true") !== "false", vimMode: setting("vimMode", "false") === "true", autoSave: setting("autoSave", "true") !== "false", autoLocation: setting("autoLocation", "false") === "true", providerOrder: providerOrder() }; }
+export function updateSettings(values: { saveFormat?: string; template?: string; showTagCloud?: boolean; vimMode?: boolean; autoSave?: boolean; autoLocation?: boolean; providerOrder?: ProviderId[] }) {
   const current = settings();
   const saveFormat = values.saveFormat?.trim() || current.saveFormat;
   if (!saveFormat.includes("YYYY") || !saveFormat.includes("MM") || !saveFormat.includes("DD") || saveFormat.includes("..") || path.isAbsolute(saveFormat)) throw new Error("Save format must be a relative path containing YYYY, MM, and DD.");
@@ -28,6 +37,8 @@ export function updateSettings(values: { saveFormat?: string; template?: string;
   const vimMode = values.vimMode ?? current.vimMode;
   const autoSave = values.autoSave ?? current.autoSave;
   const autoLocation = values.autoLocation ?? current.autoLocation;
+  const nextProviderOrder = values.providerOrder ?? current.providerOrder;
+  if (!Array.isArray(nextProviderOrder) || nextProviderOrder.length !== defaultProviderOrder.length || !defaultProviderOrder.every((provider) => nextProviderOrder.includes(provider))) throw new Error("Provider order must contain GitHub, Immich, and archive exactly once.");
   const upsert = (key: string, value: string) => db().insert(settingsTable).values({ key, value }).onConflictDoUpdate({ target: settingsTable.key, set: { value } }).run();
   upsert("saveFormat", saveFormat);
   upsert("template", template);
@@ -35,6 +46,7 @@ export function updateSettings(values: { saveFormat?: string; template?: string;
   upsert("vimMode", String(vimMode));
   upsert("autoSave", String(autoSave));
   upsert("autoLocation", String(autoLocation));
+  upsert("providerOrder", JSON.stringify(nextProviderOrder));
   return settings();
 }
 

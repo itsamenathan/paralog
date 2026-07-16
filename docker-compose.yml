@@ -12,6 +12,7 @@ services:
       PARALOG_GEOCODING_USER_AGENT: ${PARALOG_GEOCODING_USER_AGENT:-Paralog/0.1 (+https://github.com/itsamenathan/paralog)}
       IMMICH_API_URL: ${IMMICH_API_URL:-}
       IMMICH_API_KEY: ${IMMICH_API_KEY:-}
+      PARALOG_GITHUB_TOKEN: ${PARALOG_GITHUB_TOKEN:-}
     volumes:
       - ./data:/data
     restart: unless-stopped

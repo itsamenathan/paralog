@@ -57,6 +57,31 @@ IMMICH_API_KEY=your-api-key
 
 The URL may include `/api`; Paralog adds it when omitted. Searches and thumbnail requests run only on the server, and the API key is never sent to the browser. Leave either variable unset to disable the integration.
 
+## Daily activity integrations
+
+Paralog loads date-based context through a shared server-side provider registry. Immich photos and GitHub commits use the same daily activity endpoint, so another service can be added by implementing the provider contract in `lib/day-providers.ts` without adding another fetch lifecycle to the journal UI. Provider credentials stay on the server.
+
+### GitHub commits
+
+Paralog uses GitHub's GraphQL contribution collection to show the number of commits and the repositories committed to on each journal date. A fine-grained personal access token is recommended.
+
+1. Open GitHub's [fine-grained token settings](https://github.com/settings/personal-access-tokens/new), or follow GitHub's [token creation guide](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token).
+2. Name the token `Paralog` and choose an expiration date.
+3. Choose the **Resource owner**. A fine-grained token can access repositories owned by only that user or organization.
+4. Under **Repository access**, keep the default public-repository access if public contributions are enough. To include private repositories, choose **Only select repositories** and select the repositories Paralog should display.
+5. Under **Repository permissions**, set **Contents** to **Read-only** when private repositories are selected. GitHub includes read-only **Metadata** access automatically. Leave all account and organization permissions unset.
+6. Generate the token and copy it immediately, then configure:
+
+```bash
+PARALOG_GITHUB_TOKEN=github_pat_your_token
+```
+
+No write permissions are needed. In particular, Paralog does not need Actions, Administration, Commit statuses, Issues, or Pull requests permissions. The token identifies the GitHub user whose contributions are displayed; repositories outside its selected resource owner and repository access will not be named. Organization-owned repositories may require an administrator to approve the token before GitHub exposes them.
+
+GitHub documents the available [fine-grained token permissions](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens?apiVersion=2026-03-10). Although that table is organized around REST endpoints, Paralog calls GraphQL and only reads contribution counts plus repository names. If a classic token must be used instead, `read:user` includes private and internal contribution totals; repository access through the broad `repo` scope is needed to name private repositories, so a fine-grained token is safer.
+
+Treat the token like a password: keep it in `.env`, never commit it, and restart Paralog after changing it. Leave `PARALOG_GITHUB_TOKEN` unset to disable the GitHub provider.
+
 ## Imported files and settings
 
 Paralog discovers Markdown files added directly under the data directory when their filename includes `YYYY-MM-DD`, so entries using the default format appear without an import step. In Settings, change the path format with tokens such as `YYYY`, `MM`, `MMMM`, `DD`, and `dddd`, and set a Markdown template for new entries. Changing the format affects future saves only; existing files remain in place and are still discovered.
