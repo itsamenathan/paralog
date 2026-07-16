@@ -123,7 +123,14 @@ export function saveEntry(date: string, content: string) {
   return { date, saved: true };
 }
 
-export function entriesForMonth(month: string) { discoverEntries(); return db().select({ date: entries.date }).from(entries).where(like(entries.date, `${month}-%`)).orderBy(entries.date).all().map((row) => row.date); }
+export function entriesForMonth(month: string) {
+  discoverEntries();
+  return db().select({ date: entries.date, path: entries.path }).from(entries).where(like(entries.date, `${month}-%`)).orderBy(entries.date).all().flatMap((row) => {
+    if (!fs.existsSync(row.path)) return [];
+    const body = markdownBody(fs.readFileSync(row.path, "utf8")).trim();
+    return [{ date: row.date, words: body ? body.split(/\s+/).length : 0 }];
+  });
+}
 
 function withoutFencedCode(content: string) {
   let fence: { character: string; length: number } | null = null;
