@@ -181,40 +181,49 @@ export function revisionForDate(date: string, id: number) {
   return db().select({ id: revisions.id, content: revisions.content, createdAt: revisions.createdAt }).from(revisions).where(and(eq(revisions.date, date), eq(revisions.id, id))).get();
 }
 
-function entryReferences(content: string, kind: JournalReference["kind"]) {
+function entryReferences(content: string) {
   const searchable = withoutFencedCode(markdownBody(content))
     .replace(/`[^`\n]*`/g, " ")
     .replace(/!?\[[^\]]*\]\([^)]+\)/g, " ")
     .replace(/https?:\/\/\S+/g, " ");
-  const found = new Map<string, string>();
+  const found = {
+    tag: new Map<string, string>(),
+    person: new Map<string, string>(),
+  };
   for (const reference of journalReferences(searchable)) {
-    if (reference.kind !== kind) continue;
     const label = reference.label;
     const key = label.normalize("NFC").toLocaleLowerCase();
-    if (!found.has(key)) found.set(key, label);
+    if (!found[reference.kind].has(key)) found[reference.kind].set(key, label);
   }
   return found;
 }
 
-function referenceCloud(kind: JournalReference["kind"]) {
+export function references() {
   discoverEntries();
   const rows = db().select({ date: entries.date, path: entries.path }).from(entries).orderBy(desc(entries.date)).all();
-  const cloud = new Map<string, { name: string; dates: string[] }>();
+  const clouds = {
+    tag: new Map<string, { name: string; dates: string[] }>(),
+    person: new Map<string, { name: string; dates: string[] }>(),
+  };
   for (const row of rows) {
     if (!fs.existsSync(row.path)) continue;
-    for (const [key, label] of entryReferences(fs.readFileSync(row.path, "utf8"), kind)) {
-      const reference = cloud.get(key) ?? { name: label, dates: [] };
-      reference.dates.push(row.date);
-      cloud.set(key, reference);
+    const found = entryReferences(fs.readFileSync(row.path, "utf8"));
+    for (const kind of ["tag", "person"] as const) {
+      for (const [key, label] of found[kind]) {
+        const reference = clouds[kind].get(key) ?? { name: label, dates: [] };
+        reference.dates.push(row.date);
+        clouds[kind].set(key, reference);
+      }
     }
   }
-  return [...cloud.values()]
+  const summarize = (cloud: Map<string, { name: string; dates: string[] }>) => [...cloud.values()]
     .map((reference) => ({ ...reference, count: reference.dates.length }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  return { tags: summarize(clouds.tag), people: summarize(clouds.person) };
 }
 
-export function tags() { return referenceCloud("tag"); }
-export function people() { return referenceCloud("person"); }
+export function tags() { return references().tags; }
+export function people() { return references().people; }
 
 function excerpt(content: string) {
   return markdownBody(content)
@@ -234,7 +243,7 @@ function entriesWithReference(value: string, kind: JournalReference["kind"]) {
   return rows.flatMap((row) => {
     if (!fs.existsSync(row.path)) return [];
     const content = fs.readFileSync(row.path, "utf8");
-    if (!entryReferences(content, kind).has(key)) return [];
+    if (!entryReferences(content)[kind].has(key)) return [];
     const body = markdownBody(content);
     return [{ date: row.date, excerpt: excerpt(content), words: body.trim() ? body.trim().split(/\s+/).length : 0 }];
   });

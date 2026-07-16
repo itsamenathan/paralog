@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { basicSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { Compartment, EditorState, Prec, type Extension, type Range } from "@codemirror/state";
@@ -288,9 +288,15 @@ type LiveMarkdownEditorProps = {
   jumpToLine: number | null;
   onJumpHandled: () => void;
   vimMode: boolean;
+  tags: ReferenceSuggestion[];
+  people: ReferenceSuggestion[];
 };
 
-export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, template, jumpToLine, onJumpHandled, vimMode }: LiveMarkdownEditorProps) {
+type ReferenceSuggestion = { name: string; count: number };
+type ReferenceQuery = { kind: "tag" | "person"; query: string; from: number; to: number };
+type SuggestionMenuItem = { label: string; hint: string; run: () => void };
+
+export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, template, jumpToLine, onJumpHandled, vimMode, tags, people }: LiveMarkdownEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const vimCompartment = useRef(new Compartment());
@@ -299,7 +305,12 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
   const externalUpdate = useRef(false);
   const imageInput = useRef<HTMLInputElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuItemsRef = useRef<SuggestionMenuItem[]>([]);
+  const menuIndexRef = useRef(0);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [referenceQuery, setReferenceQuery] = useState<ReferenceQuery | null>(null);
+  const [menuIndex, setMenuIndex] = useState(0);
   const [hasSelection, setHasSelection] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -307,6 +318,14 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
   const [linkUrl, setLinkUrl] = useState("");
   onChangeRef.current = onChange;
   onUploadRef.current = onUpload;
+
+  const selectMenuIndex = (index: number) => {
+    menuIndexRef.current = index;
+    setMenuIndex(index);
+    window.requestAnimationFrame(() => menuRef.current?.querySelector("button.active")?.scrollIntoView({ block: "nearest" }));
+  };
+
+  useEffect(() => { selectMenuIndex(0); }, [slashQuery, referenceQuery?.kind, referenceQuery?.query]);
 
   async function insertUploads(files: File[], position?: number) {
     const view = editor.current;
@@ -331,6 +350,29 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
   useEffect(() => {
     if (!host.current) return;
     const editorEvents = EditorView.domEventHandlers({
+      keydown(event) {
+        const items = menuItemsRef.current;
+        if (items.length === 0) return false;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const offset = event.key === "ArrowDown" ? 1 : -1;
+          selectMenuIndex((menuIndexRef.current + offset + items.length) % items.length);
+          return true;
+        }
+        if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey)) {
+          event.preventDefault();
+          items[Math.min(menuIndexRef.current, items.length - 1)].run();
+          return true;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          menuItemsRef.current = [];
+          setSlashQuery(null);
+          setReferenceQuery(null);
+          return true;
+        }
+        return false;
+      },
       paste(event, view) {
         const files = [...event.clipboardData?.files || []];
         if (files.length > 0) {
@@ -378,7 +420,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
         placeholder("What’s on your mind?"),
         livePreview,
         referenceNavigation,
-        editorEvents,
+        Prec.high(editorEvents),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !externalUpdate.current) onChangeRef.current(update.state.doc.toString());
           if (update.docChanged || update.selectionSet) {
@@ -386,7 +428,20 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
             setHasSelection(!selection.empty);
             const line = update.state.doc.lineAt(selection.head);
             const beforeCursor = line.text.slice(0, selection.head - line.from);
-            setSlashQuery(beforeCursor.match(/^\/([a-z-]*)$/i)?.[1].toLowerCase() ?? null);
+            if (selection.empty) {
+              const slashMatch = beforeCursor.match(/^\/([a-z-]*)$/i);
+              setSlashQuery(slashMatch?.[1].toLowerCase() ?? null);
+              const referenceMatch = slashMatch ? null : beforeCursor.match(/(^|[\s([{"'.,!?;:>])([#@])([\p{L}\p{N}_-]*)$/u);
+              setReferenceQuery(referenceMatch ? {
+                kind: referenceMatch[2] === "#" ? "tag" : "person",
+                query: referenceMatch[3],
+                from: selection.head - referenceMatch[3].length,
+                to: selection.head,
+              } : null);
+            } else {
+              setSlashQuery(null);
+              setReferenceQuery(null);
+            }
             keepMobileCursorVisible(update.view);
           }
         }),
@@ -515,6 +570,17 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
     view.focus();
   }
 
+  function insertReference(name: string, query: ReferenceQuery) {
+    const view = editor.current;
+    if (!view) return;
+    view.dispatch({
+      changes: { from: query.from, to: query.to, insert: name },
+      selection: { anchor: query.from + name.length },
+    });
+    setReferenceQuery(null);
+    view.focus();
+  }
+
   const slashCommands = [
     { label: "Heading", hint: "Section heading", run: () => runSlash("## ") },
     { label: "List", hint: "Bulleted list", run: () => runSlash("- ") },
@@ -525,6 +591,63 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
     { label: "Attachment", hint: "Upload any file", run: () => { clearSlash(); attachmentInput.current?.click(); } },
     ...(template ? [{ label: "Template", hint: "Insert your entry template", run: () => runSlash(template) }] : []),
   ].filter((command) => slashQuery === null || command.label.toLowerCase().includes(slashQuery));
+
+  const normalizedReferenceQuery = referenceQuery?.query.normalize("NFC").toLocaleLowerCase() ?? "";
+  const referenceSuggestions: SuggestionMenuItem[] = referenceQuery ? (referenceQuery.kind === "tag" ? tags : people)
+    .filter((reference) => {
+      const normalizedName = reference.name.normalize("NFC").toLocaleLowerCase();
+      return normalizedName.startsWith(normalizedReferenceQuery) && normalizedName !== normalizedReferenceQuery;
+    })
+    .slice(0, 8)
+    .map((reference) => ({
+      label: `${referenceQuery.kind === "tag" ? "#" : "@"}${reference.name}`,
+      hint: `${reference.count} ${reference.count === 1 ? "entry" : "entries"}`,
+      run: () => insertReference(reference.name, referenceQuery),
+    })) : [];
+  const menuItems: SuggestionMenuItem[] = slashQuery !== null ? slashCommands : referenceSuggestions;
+  const menuLabel = slashQuery !== null ? "Insert Markdown block" : referenceQuery?.kind === "tag" ? "Choose a tag" : "Choose a person";
+  menuItemsRef.current = menuItems;
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    const view = editor.current;
+    if (!menu || !view || menuItems.length === 0) return;
+    const position = () => {
+      const caret = view.coordsAtPos(view.state.selection.main.head);
+      if (!caret) return;
+      const activeLine = view.dom.querySelector(".cm-activeLine")?.getBoundingClientRect();
+      const anchorTop = activeLine ? Math.min(caret.top, activeLine.top) : caret.top;
+      const anchorBottom = activeLine ? Math.max(caret.bottom, activeLine.bottom) : caret.bottom;
+      const viewport = window.visualViewport;
+      const visibleTop = (viewport?.offsetTop ?? 0) + 8;
+      const visibleBottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - 8;
+      const gap = 8;
+      const belowSpace = Math.max(0, visibleBottom - anchorBottom - gap);
+      const aboveSpace = Math.max(0, anchorTop - visibleTop - gap);
+      const naturalHeight = Math.min(menu.scrollHeight, 320);
+      const below = belowSpace >= Math.min(naturalHeight, 160) || belowSpace >= aboveSpace;
+      const availableHeight = below ? belowSpace : aboveSpace;
+      const height = Math.min(naturalHeight, Math.max(48, availableHeight));
+      menu.style.maxHeight = `${height}px`;
+      menu.style.top = `${below ? anchorBottom + gap : anchorTop - gap - height}px`;
+      const width = menu.getBoundingClientRect().width;
+      const viewportLeft = viewport?.offsetLeft ?? 0;
+      const viewportRight = viewportLeft + (viewport?.width ?? window.innerWidth);
+      menu.style.left = `${Math.min(Math.max(caret.left, viewportLeft + 8), viewportRight - width - 8)}px`;
+      menu.dataset.placement = below ? "below" : "above";
+      menu.dataset.positioned = "true";
+    };
+    position();
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("resize", position);
+    viewport?.addEventListener("scroll", position);
+    window.addEventListener("resize", position);
+    return () => {
+      viewport?.removeEventListener("resize", position);
+      viewport?.removeEventListener("scroll", position);
+      window.removeEventListener("resize", position);
+    };
+  }, [menuItems.length, normalizedReferenceQuery, referenceQuery?.kind, slashQuery]);
 
   return <div className="live-markdown-editor">
     <div className="live-toolbar" role="toolbar" aria-label="Markdown formatting">
@@ -548,8 +671,17 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       <button type="submit">Insert link</button>
       <button type="button" aria-label="Cancel link" onClick={() => setShowLinkInput(false)}>×</button>
     </form>}
-    {slashQuery !== null && slashCommands.length > 0 && <div className="slash-menu" role="menu" aria-label="Insert Markdown block">
-      {slashCommands.map((command) => <button type="button" role="menuitem" key={command.label} onClick={command.run}><b>{command.label}</b><span>{command.hint}</span></button>)}
+    {menuItems.length > 0 && <div ref={menuRef} className="slash-menu" role="menu" aria-label={menuLabel}>
+      {menuItems.map((item, index) => <button
+        type="button"
+        role="menuitem"
+        className={index === menuIndex ? "active" : ""}
+        aria-current={index === menuIndex ? "true" : undefined}
+        key={item.label}
+        onMouseDown={(event) => event.preventDefault()}
+        onMouseEnter={() => selectMenuIndex(index)}
+        onClick={item.run}
+      ><b>{item.label}</b><span>{item.hint}</span></button>)}
     </div>}
     <div ref={host} className="live-editor-host" />
     {hasSelection && <div className="mobile-selection-toolbar" role="toolbar" aria-label="Format selected text">

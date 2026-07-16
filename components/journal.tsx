@@ -562,12 +562,11 @@ export default function Journal() {
 
   const loadReferences = useCallback(async () => {
     try {
-      const [tagResponse, peopleResponse] = await Promise.all([
-        fetch("/api/tags", { cache: "no-store" }),
-        fetch("/api/people", { cache: "no-store" }),
-      ]);
-      if (tagResponse.ok) setTags((await tagResponse.json()).tags);
-      if (peopleResponse.ok) setPeople((await peopleResponse.json()).people);
+      const response = await fetch("/api/references", { cache: "no-store" });
+      if (!response.ok) return;
+      const result = await response.json();
+      setTags(result.tags);
+      setPeople(result.people);
     } catch {
       // Keep the last references available when offline.
     }
@@ -1190,7 +1189,7 @@ export default function Journal() {
           <button className="template-button" type="button" onClick={() => changeContent(entry.template)}>Start with your template →</button>
         )}
         <div className={`editor-frame ${loading ? "loading" : ""}`}>
-          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} />}
+          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} />}
         </div>
         </div>
         <aside className="entry-context-column" aria-label="Photos and archive memories">
