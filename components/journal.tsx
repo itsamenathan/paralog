@@ -4,7 +4,8 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { remarkJournalReferences } from "@/lib/markdown-references";
-import { markdownBody, setLocationFrontMatter } from "@/lib/front-matter";
+import { journalWordCount, markdownBody, setLocationFrontMatter } from "@/lib/front-matter";
+import { entryMap, mergeCalendarEntries, type CalendarEntry } from "@/lib/calendar-entries";
 import type { DayPhoto, DaySummaryActivity } from "@/lib/day-activity-types";
 import { DEFAULT_WIDGET_LAYOUT } from "@/lib/widget-layout";
 import { ActivityWidget } from "./widgets/activity-widget";
@@ -35,7 +36,6 @@ type Entry = {
   memories: Memory[];
   template: string;
 };
-type CalendarEntry = { date: string; words: number };
 type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: string; count?: number };
 type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
 type SaveState = "saved" | "saving" | "unsaved" | "offline";
@@ -111,11 +111,6 @@ function cacheEntry(date: string, entry: Entry, pending: boolean) {
   );
 }
 
-function wordCount(content: string) {
-  const body = markdownBody(content).trim();
-  return body ? body.split(/\s+/).length : 0;
-}
-
 function pendingEntries(period: string, onlyPending = false) {
   const entries: CalendarEntry[] = [];
   for (let index = 0; index < localStorage.length; index += 1) {
@@ -123,19 +118,9 @@ function pendingEntries(period: string, onlyPending = false) {
     if (!key?.startsWith(ENTRY_CACHE)) continue;
     const date = key.slice(ENTRY_CACHE.length);
     const cached = readCachedEntry(date);
-    if (date.startsWith(`${period}-`) && cached && (!onlyPending || cached.pending) && (cached.exists || cached.content.trim())) entries.push({ date, words: wordCount(cached.content) });
+    if (date.startsWith(`${period}-`) && cached && (!onlyPending || cached.pending) && (cached.exists || cached.content.trim())) entries.push({ date, words: journalWordCount(cached.content) });
   }
   return entries;
-}
-
-function entryMap(entries: CalendarEntry[]) {
-  return Object.fromEntries(entries.map((entry) => [entry.date, entry.words]));
-}
-
-function mergeCalendarEntries(...groups: CalendarEntry[][]) {
-  const merged = new Map<string, number>();
-  groups.forEach((group) => group.forEach((entry) => merged.set(entry.date, entry.words)));
-  return [...merged].map(([date, words]) => ({ date, words }));
 }
 
 function currentPosition() {
@@ -260,7 +245,7 @@ export default function Journal() {
     const draft = { ...current, content, exists: Boolean(content.trim()) || current.exists };
     cacheEntry(date, draft, true);
     if (date === selected) setSaveState(navigator.onLine ? "saving" : "offline");
-    setDayWords((days) => ({ ...days, [date]: wordCount(content) }));
+    setDayWords((days) => ({ ...days, [date]: journalWordCount(content) }));
 
     if (!navigator.onLine) return false;
     serverContentRef.current = content;

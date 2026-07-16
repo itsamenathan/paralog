@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
-import path from "node:path";
 import { db } from "@/lib/db";
 import { settingsTable } from "@/lib/db/schema";
 import { legacyWidgetSettings, normalizeWidgetLayout, resolveWidgetLayoutUpdate, type WidgetLayout } from "@/lib/widget-layout";
+import { validateSaveFormat } from "./path-format";
 
 export const DEFAULT_SAVE_FORMAT = "YYYY/MM-MMMM/YYYY-MM-DD-dddd.md";
 const DEFAULT_PROVIDER_ORDER = ["immich", "archive", "github"] as const;
@@ -63,9 +63,7 @@ export function updateSettings(values: {
 }) {
   const current = settings();
   const saveFormat = values.saveFormat?.trim() || current.saveFormat;
-  if (!saveFormat.includes("YYYY") || !saveFormat.includes("MM") || !saveFormat.includes("DD") || saveFormat.includes("..") || path.isAbsolute(saveFormat)) {
-    throw new Error("Save format must be a relative path containing YYYY, MM, and DD.");
-  }
+  validateSaveFormat(saveFormat);
   const template = values.template ?? current.template;
   const vimMode = values.vimMode ?? current.vimMode;
   const autoSave = values.autoSave ?? current.autoSave;

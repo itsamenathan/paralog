@@ -6,6 +6,11 @@ export function markdownBody(markdown: string) {
   return match ? markdown.slice(match[0].length) : markdown;
 }
 
+export function journalWordCount(markdown: string) {
+  const body = markdownBody(markdown).trim();
+  return body ? body.split(/\s+/).length : 0;
+}
+
 export function setLocationFrontMatter(markdown: string, location: string) {
   const value = `location: ${JSON.stringify(location)}`;
   const match = markdown.match(block);
