@@ -8,7 +8,8 @@
     "start": "next start",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
-    "test:migrations": "node --test scripts/test-migrations.mjs"
+    "test:migrations": "node --test scripts/test-migrations.mjs",
+    "test:widgets": "node --no-warnings --test scripts/test-widget-layout.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "6.5.0",

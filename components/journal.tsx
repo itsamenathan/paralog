@@ -6,13 +6,21 @@ import ReactMarkdown from "react-markdown";
 import { remarkJournalReferences } from "@/lib/markdown-references";
 import { markdownBody, setLocationFrontMatter } from "@/lib/front-matter";
 import type { DayActivity, DayPhoto, DaySummaryActivity } from "@/lib/day-activity-types";
+import { DEFAULT_WIDGET_LAYOUT, type WidgetLayout } from "@/lib/widget-layout";
+import { ActivityWidget } from "./widgets/activity-widget";
+import { ArchiveWidget } from "./widgets/archive-widget";
+import { displayDate, fromIso, iso, monthKey } from "./widgets/date-utils";
+import { ImmichWidget, immichImageUrl } from "./widgets/immich-widget";
+import { ReferencesWidget } from "./widgets/references-widget";
+import type { Memory, ReferenceSummary, WidgetPlacement } from "./widgets/types";
+import { WidgetLayoutEditor } from "./widgets/widget-layout-editor";
+import { WordCalendarWidget } from "./widgets/word-calendar-widget";
 
 const LiveMarkdownEditor = dynamic(() => import("./live-markdown-editor"), {
   ssr: false,
   loading: () => <div className="editor-loading">Opening your page…</div>,
 });
 
-type Memory = { date: string; excerpt: string; words: number };
 type Entry = {
   content: string;
   exists: boolean;
@@ -22,28 +30,24 @@ type Entry = {
 };
 type NotificationRule = "always" | "empty";
 type NotificationSchedule = { id: string; enabled: boolean; time: string; weekdays: number[]; rule: NotificationRule; title: string; body: string };
-type ProviderId = "github" | "immich" | "archive";
 type CalendarEntry = { date: string; words: number };
 type Settings = {
   saveFormat: string;
   template: string;
+  widgetLayout: WidgetLayout;
   showTagCloud: boolean;
   vimMode: boolean;
   autoSave: boolean;
   autoLocation: boolean;
-  providerOrder: ProviderId[];
+  providerOrder: WidgetLayout["context"];
   notificationTimezone: string;
   notificationSchedules: NotificationSchedule[];
 };
-type ReferenceSummary = { name: string; count: number; dates: string[] };
 type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: string; count?: number };
 type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
 type SaveState = "saved" | "saving" | "unsaved" | "offline";
 type CachedEntry = Entry & { pending: boolean; updatedAt: string };
 type CommandIconName = "edit" | "markdown" | "read" | "focus";
-
-const immichImageUrl = (id: string, size: "thumbnail" | "preview") =>
-  `/api/immich/thumbnail/${encodeURIComponent(id)}?size=${size}`;
 
 function CommandIcon({ name }: { name: CommandIconName }) {
   return <svg className="command-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -63,28 +67,11 @@ const EMPTY_ENTRY: Entry = {
 };
 const ENTRY_CACHE = "paralog:entry:";
 const CALENDAR_CACHE = "paralog:calendar:";
-const PROVIDER_LABELS: Record<ProviderId, string> = { github: "GitHub", immich: "Immich", archive: "Your archive" };
-
-const iso = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-const fromIso = (value: string) => {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day);
-};
 const parseIso = (value: string | null) => {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = fromIso(value);
   return iso(date) === value ? date : null;
 };
-const monthKey = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-const displayDate = (value: string) =>
-  new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(fromIso(value));
 const storedMarkdown = (content: string) => content.endsWith("\n") ? content : `${content}\n`;
 
 function keepSourceCursorVisible(textarea: HTMLTextAreaElement) {
@@ -166,77 +153,6 @@ function currentPosition() {
   }));
 }
 
-function WordHeatmap({
-  month,
-  selected,
-  dayWords,
-  onMonthChange,
-  onSelect,
-}: {
-  month: Date;
-  selected: string;
-  dayWords: Record<string, number>;
-  onMonthChange: (date: Date) => void;
-  onSelect: (date: string) => void;
-}) {
-  const cells = useMemo(() => {
-    const first = new Date(month.getFullYear(), month.getMonth(), 1);
-    const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-    return Array.from({ length: first.getDay() + count }, (_, index) =>
-      index < first.getDay()
-        ? null
-        : new Date(month.getFullYear(), month.getMonth(), index - first.getDay() + 1),
-    );
-  }, [month]);
-  const { levels, maximum } = useMemo(() => {
-    const prefix = `${monthKey(month)}-`;
-    const values = [...new Set(Object.entries(dayWords)
-      .filter(([date, words]) => date.startsWith(prefix) && words > 0)
-      .map(([, words]) => words))]
-      .sort((left, right) => left - right);
-    const scale = new Map<number, number>();
-    values.forEach((words, index) => {
-      const level = values.length === 1 ? 4 : 1 + Math.floor((index * 3) / (values.length - 1));
-      scale.set(words, level);
-    });
-    return { levels: scale, maximum: values.at(-1) || 0 };
-  }, [dayWords, month]);
-
-  const label = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(month);
-  return (
-    <section className="word-heatmap" aria-label={`${label} journal word count heatmap`}>
-      <div className="month-nav">
-        <button type="button" aria-label="Previous month" onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><span aria-hidden="true">←</span></button>
-        <strong>{label}</strong>
-        <button type="button" aria-label="Next month" onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><span aria-hidden="true">→</span></button>
-      </div>
-      <div className="heatmap-weekdays" aria-hidden="true">
-        {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
-      </div>
-      <div className="heatmap-grid">
-          {cells.map((date, index) => {
-            if (!date) return <span className="heatmap-cell outside" key={`empty-${index}`} />;
-            const value = iso(date);
-            const words = dayWords[value] ?? 0;
-            const level = words > 0 ? levels.get(words) || 1 : 0;
-            return <button
-              type="button"
-              className={`heatmap-cell level-${level} ${value === selected ? "selected" : ""}`}
-              key={value}
-              aria-label={`${displayDate(value)}: ${words} ${words === 1 ? "word" : "words"}, intensity ${level} of 4 for this month`}
-              aria-current={value === selected ? "date" : undefined}
-              title={`${displayDate(value)} · ${words} ${words === 1 ? "word" : "words"}`}
-              onClick={() => onSelect(value)}
-            >{date.getDate()}</button>;
-          })}
-      </div>
-      <div className="heatmap-legend" title="Color intensity is ranked against the other entries in this month">
-        <span>Relative this month</span><span>0</span>{[0, 1, 2, 3, 4].map((level) => <i className={`level-${level}`} key={level} />)}<span>{maximum} words</span>
-      </div>
-    </section>
-  );
-}
-
 function applicationServerKey(value: string) {
   const padding = "=".repeat((4 - value.length % 4) % 4);
   const decoded = atob((value + padding).replaceAll("-", "+").replaceAll("_", "/"));
@@ -260,98 +176,6 @@ async function unsubscribeCurrentDevice() {
   } finally {
     await subscription.unsubscribe();
   }
-}
-
-function ReferenceBrowser({ references, kind }: {
-  references: ReferenceSummary[];
-  kind: "tag" | "person";
-}) {
-  const largest = Math.max(...references.map((reference) => reference.count), 1);
-  const marker = kind === "tag" ? "#" : "@";
-  const collection = kind === "tag" ? "tags" : "people";
-  return <section className="tag-browser" aria-label={`Journal ${collection}`}>
-    <div className="tag-heading"><p className="eyebrow">{collection.toUpperCase()}</p></div>
-    <div className="tag-cloud">
-      {references.map((reference) => <a
-        href={`/${collection}/${encodeURIComponent(reference.name.normalize("NFC").toLocaleLowerCase())}`}
-        key={reference.name}
-        style={{ "--tag-weight": String(reference.count / largest) } as React.CSSProperties}
-        aria-label={`${marker}${reference.name}, ${reference.count} ${reference.count === 1 ? "entry" : "entries"}`}
-      >{marker}{reference.name}</a>)}
-    </div>
-  </section>;
-}
-
-function MemoryShelf({ memories, selected, expanded, placement, onToggle, onChoose }: {
-  memories: Memory[];
-  selected: string;
-  expanded: boolean;
-  placement: "desktop" | "mobile";
-  onToggle: () => void;
-  onChoose: (date: string) => void;
-}) {
-  if (memories.length === 0) return null;
-  const titleId = `memory-title-${placement}`;
-  const listId = `memory-list-${placement}`;
-  return <section className={`memory-shelf memory-shelf-${placement}`} aria-labelledby={titleId}>
-    <div className="memory-heading"><div><p className="eyebrow">FROM YOUR ARCHIVE</p><h3 id={titleId}>This day, other years</h3></div><span>{memories.length} {memories.length === 1 ? "memory" : "memories"}</span></div>
-    <div className="memory-list" id={listId}>
-      {(expanded ? memories : memories.slice(0, 3)).map((memory) => {
-        const yearsAgo = fromIso(selected).getFullYear() - fromIso(memory.date).getFullYear();
-        return <button type="button" className="memory-card" key={memory.date} onClick={() => onChoose(memory.date)}>
-          <span className="memory-year">{fromIso(memory.date).getFullYear()} <small>{yearsAgo} {yearsAgo === 1 ? "year" : "years"} ago</small></span>
-          <span className="memory-excerpt">{memory.excerpt || "A quiet page from this day."}</span>
-          <span className="memory-meta">{memory.words} words <b aria-hidden="true">→</b></span>
-        </button>;
-      })}
-    </div>
-    {memories.length > 3 && <button type="button" className="memory-toggle" aria-expanded={expanded} aria-controls={listId} onClick={onToggle}>
-      {expanded ? "Show fewer" : `Show all ${memories.length} years`}
-    </button>}
-  </section>;
-}
-
-function PhotoShelf({ photos, total, selected, placement, onOpen }: {
-  photos: DayPhoto[];
-  total: number;
-  selected: string;
-  placement: "desktop" | "mobile";
-  onOpen: (photo: DayPhoto) => void;
-}) {
-  if (photos.length === 0) return null;
-  const titleId = `photo-title-${placement}`;
-  const count = total === 1 ? "1 photo" : total > photos.length ? `${photos.length} of ${total} photos` : `${total} photos`;
-  return <section className={`photo-shelf photo-shelf-${placement}`} aria-labelledby={titleId}>
-    <div className="photo-heading"><div><p className="eyebrow">FROM IMMICH</p><h3 id={titleId}>Photos from this day</h3></div><span>{count}</span></div>
-    <div className="photo-grid">
-      {photos.map((photo, index) => <button type="button" className="photo-card" key={photo.id} onClick={() => onOpen(photo)} aria-label={`Open photo ${index + 1} from ${displayDate(selected)} larger`}>
-        <img
-          src={immichImageUrl(photo.id, "thumbnail")}
-          alt=""
-          width={photo.width || 640}
-          height={photo.height || 480}
-          loading="lazy"
-          decoding="async"
-        />
-      </button>)}
-    </div>
-  </section>;
-}
-
-function ActivitySummaryShelf({ activity, placement }: { activity: DaySummaryActivity; placement: "desktop" | "mobile" }) {
-  if (activity.total === 0) return null;
-  const titleId = `activity-${activity.provider}-${placement}`;
-  return <section className={`activity-shelf activity-shelf-${placement}`} aria-labelledby={titleId}>
-    <div className="activity-heading"><div><p className="eyebrow">FROM {activity.source.toUpperCase()}</p><h3 id={titleId}>{activity.title}</h3></div><span>{activity.totalLabel}</span></div>
-    <div className="activity-list">
-      {activity.items.map((item) => {
-        const contents = <><span>{item.label}</span><b>{item.count} {item.count === 1 ? activity.itemUnit.singular : activity.itemUnit.plural}</b></>;
-        return item.url
-          ? <a key={item.id} href={item.url} target="_blank" rel="noreferrer">{contents}</a>
-          : <div key={item.id}>{contents}</div>;
-      })}
-    </div>
-  </section>;
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -516,7 +340,6 @@ export default function Journal() {
   const [dirty, setDirty] = useState(false);
   const [view, setView] = useState<"rich" | "source" | "preview">("rich");
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [draggingProvider, setDraggingProvider] = useState<ProviderId | null>(null);
   const [tags, setTags] = useState<ReferenceSummary[]>([]);
   const [people, setPeople] = useState<ReferenceSummary[]>([]);
   const [activities, setActivities] = useState<DayActivity[]>([]);
@@ -548,7 +371,6 @@ export default function Journal() {
   const saveStateRef = useRef(saveState);
   const serverContentRef = useRef<string | null>(null);
   const photoSwipeStartRef = useRef<number | null>(null);
-  const draggingProviderRef = useRef<ProviderId | null>(null);
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -1118,49 +940,24 @@ export default function Journal() {
     if (response.ok) { setSettings(await response.json()); setShowSettings(false); }
   }
 
-  function moveProvider(provider: ProviderId, offset: -1 | 1) {
-    setSettings((current) => {
-      if (!current) return current;
-      const index = current.providerOrder.indexOf(provider);
-      const target = index + offset;
-      if (index < 0 || target < 0 || target >= current.providerOrder.length) return current;
-      const providerOrder = [...current.providerOrder];
-      [providerOrder[index], providerOrder[target]] = [providerOrder[target], providerOrder[index]];
-      return { ...current, providerOrder };
+  function navigationWidgets() {
+    const layout = settings?.widgetLayout || DEFAULT_WIDGET_LAYOUT;
+    return layout.navigation.map((id) => {
+      if (layout.hidden.includes(id)) return null;
+      if (id === "calendar") return <WordCalendarWidget key={id} month={month} selected={selected} dayWords={dayWords} onMonthChange={setMonth} onSelect={choose} />;
+      if (id === "tags") return <ReferencesWidget key={id} references={tags} kind="tag" />;
+      return <ReferencesWidget key={id} references={people} kind="person" />;
     });
   }
 
-  function placeProvider(provider: ProviderId, target: ProviderId) {
-    if (provider === target) return;
-    setSettings((current) => {
-      if (!current) return current;
-      const from = current.providerOrder.indexOf(provider);
-      const to = current.providerOrder.indexOf(target);
-      if (from < 0 || to < 0) return current;
-      const providerOrder = [...current.providerOrder];
-      providerOrder.splice(from, 1);
-      providerOrder.splice(to, 0, provider);
-      return { ...current, providerOrder };
-    });
-  }
-
-  function startProviderDrag(provider: ProviderId) {
-    draggingProviderRef.current = provider;
-    setDraggingProvider(provider);
-  }
-
-  function finishProviderDrag() {
-    draggingProviderRef.current = null;
-    setDraggingProvider(null);
-  }
-
-  function dailyContext(placement: "desktop" | "mobile") {
-    const order = settings?.providerOrder || ["immich", "archive", "github"];
-    return order.map((provider) => {
-      if (provider === "immich") return <PhotoShelf key={provider} photos={photos} total={photoTotal} selected={selected} placement={placement} onOpen={setOpenPhoto} />;
-      if (provider === "archive") return <MemoryShelf key={provider} memories={entry.memories} selected={selected} expanded={showAllMemories} placement={placement} onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />;
+  function dailyContext(placement: WidgetPlacement) {
+    const layout = settings?.widgetLayout || DEFAULT_WIDGET_LAYOUT;
+    return layout.context.map((provider) => {
+      if (layout.hidden.includes(provider)) return null;
+      if (provider === "immich") return <ImmichWidget key={provider} photos={photos} total={photoTotal} selected={selected} placement={placement} onOpen={setOpenPhoto} />;
+      if (provider === "archive") return <ArchiveWidget key={provider} memories={entry.memories} selected={selected} expanded={showAllMemories} placement={placement} onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />;
       const activity = activities.find((item): item is DaySummaryActivity => item.kind === "summary" && item.provider === provider);
-      return activity ? <ActivitySummaryShelf key={provider} activity={activity} placement={placement} /> : null;
+      return activity ? <ActivityWidget key={provider} activity={activity} placement={placement} /> : null;
     });
   }
 
@@ -1214,9 +1011,7 @@ export default function Journal() {
       <aside className="sidebar">
         <div className="brand"><p className="eyebrow">PRIVATE JOURNAL</p><h1>Paralog</h1></div>
         <button className="today-button" type="button" onClick={() => choose(today)}><span>Today</span><b aria-hidden="true">↗</b></button>
-        <WordHeatmap month={month} selected={selected} dayWords={dayWords} onMonthChange={setMonth} onSelect={choose} />
-        {settings?.showTagCloud && tags.length > 0 && <ReferenceBrowser references={tags} kind="tag" />}
-        {settings?.showTagCloud && people.length > 0 && <ReferenceBrowser references={people} kind="person" />}
+        {navigationWidgets()}
         <div className="side-actions">
           <button type="button" onClick={() => setDark(!dark)}><span className="action-icon" aria-hidden="true">{dark ? "☀" : "◐"}</span><span className="action-label">{dark ? "Light mode" : "Dark mode"}</span></button>
           <button type="button" onClick={() => setShowSettings(true)}><span className="action-icon" aria-hidden="true">⚙</span><span className="action-label">Settings</span></button>
@@ -1304,9 +1099,7 @@ export default function Journal() {
         <div className="sheet-backdrop" role="presentation" onClick={() => setShowCalendar(false)}>
           <section className="calendar-sheet" role="dialog" aria-modal="true" aria-label="Choose a journal date" onClick={(event) => event.stopPropagation()}>
             <div className="sheet-header"><div><p className="eyebrow">BROWSE JOURNAL</p><h3>Choose a day</h3></div><button type="button" onClick={() => setShowCalendar(false)} aria-label="Close calendar">×</button></div>
-            <WordHeatmap month={month} selected={selected} dayWords={dayWords} onMonthChange={setMonth} onSelect={choose} />
-            {settings?.showTagCloud && tags.length > 0 && <ReferenceBrowser references={tags} kind="tag" />}
-            {settings?.showTagCloud && people.length > 0 && <ReferenceBrowser references={people} kind="person" />}
+            {navigationWidgets()}
           </section>
         </div>
       )}
@@ -1317,50 +1110,7 @@ export default function Journal() {
             <div className="settings-title"><div><p className="eyebrow">PREFERENCES</p><h2 id="settings-title">Journal settings</h2></div><button type="button" onClick={() => setShowSettings(false)} aria-label="Close settings">×</button></div>
             <label>Save format<small>Tokens: YYYY, MM, MMMM, DD, dddd. Existing files stay where they are.</small><input value={settings.saveFormat} onChange={(event) => setSettings({ ...settings, saveFormat: event.target.value })} /></label>
             <label>New entry template<small>Use any Markdown you want as a starting point.</small><textarea value={settings.template} onChange={(event) => setSettings({ ...settings, template: event.target.value })} /></label>
-            <fieldset className="provider-order"><legend>Daily context order</legend><small>Drag the handles to choose the order of cards below your editor and in the desktop context column.</small>
-              <div>{settings.providerOrder.map((provider, index) => <div
-                className={`provider-order-row ${draggingProvider === provider ? "dragging" : ""}`}
-                data-provider={provider}
-                draggable
-                key={provider}
-                onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", provider); startProviderDrag(provider); }}
-                onDragEnter={() => { const dragging = draggingProviderRef.current; if (dragging) placeProvider(dragging, provider); }}
-                onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
-                onDrop={(event) => { event.preventDefault(); finishProviderDrag(); }}
-                onDragEnd={finishProviderDrag}
-              >
-                <span><b>{index + 1}</b>{PROVIDER_LABELS[provider]}</span>
-                <button
-                  type="button"
-                  className="provider-drag-handle"
-                  draggable
-                  aria-label={`Reorder ${PROVIDER_LABELS[provider]}`}
-                  aria-pressed={draggingProvider === provider}
-                  title={`Drag to reorder ${PROVIDER_LABELS[provider]}`}
-                  onKeyDown={(event) => {
-                    if (event.key === " " || event.key === "Enter") { event.preventDefault(); draggingProvider === provider ? finishProviderDrag() : startProviderDrag(provider); }
-                    else if (draggingProvider === provider && (event.key === "ArrowUp" || event.key === "ArrowDown")) { event.preventDefault(); moveProvider(provider, event.key === "ArrowUp" ? -1 : 1); }
-                    else if (draggingProvider === provider && event.key === "Escape") { event.preventDefault(); finishProviderDrag(); }
-                  }}
-                  onPointerDown={(event) => {
-                    if (event.pointerType === "mouse") return;
-                    event.preventDefault();
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    startProviderDrag(provider);
-                  }}
-                  onPointerMove={(event) => {
-                    if (!draggingProviderRef.current || event.pointerType === "mouse") return;
-                    event.preventDefault();
-                    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-provider]")?.dataset.provider as ProviderId | undefined;
-                    if (target && target in PROVIDER_LABELS) placeProvider(draggingProviderRef.current, target);
-                  }}
-                  onPointerUp={finishProviderDrag}
-                  onPointerCancel={finishProviderDrag}
-                ><span aria-hidden="true">⠿</span></button>
-              </div>)}</div>
-              <p className="provider-order-status" aria-live="polite">{draggingProvider ? `${PROVIDER_LABELS[draggingProvider]} picked up. Drag it, or use the arrow keys, then press Enter to drop.` : ""}</p>
-            </fieldset>
-            <label className="toggle-setting"><input type="checkbox" checked={settings.showTagCloud} onChange={(event) => setSettings({ ...settings, showTagCloud: event.target.checked })} /><span><b>Show tags and people</b><small>Collect hashtags and @mentions from your entries in the desktop sidebar and mobile calendar.</small></span></label>
+            <WidgetLayoutEditor layout={settings.widgetLayout} onChange={(widgetLayout) => setSettings({ ...settings, widgetLayout })} />
             <label className="toggle-setting"><input type="checkbox" checked={settings.autoSave} onChange={(event) => setSettings({ ...settings, autoSave: event.target.checked })} /><span><b>Automatically save entries</b><small>Save after you pause typing. You can always save immediately with Ctrl+S or Cmd+S.</small></span></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.autoLocation} onChange={(event) => setSettings({ ...settings, autoLocation: event.target.checked })} /><span><b>Add location to new entries</b><small>When you begin writing on an empty day, request your location and add the nearest city, state, and country to its metadata.</small></span></label>
             <label className="toggle-setting"><input type="checkbox" checked={settings.vimMode} onChange={(event) => setSettings({ ...settings, vimMode: event.target.checked })} /><span><b>Vim keybindings</b><small>Enable Normal, Insert, and Visual modes in the Live Preview editor on desktop. Mobile always uses standard editing.</small></span></label>
