@@ -1,4 +1,4 @@
-export const NAVIGATION_WIDGET_IDS = ["calendar", "tags", "people"] as const;
+export const NAVIGATION_WIDGET_IDS = ["calendar", "stats", "search", "tags", "people"] as const;
 export const CONTEXT_WIDGET_IDS = ["immich", "archive", "github"] as const;
 export const WIDGET_IDS = [...NAVIGATION_WIDGET_IDS, ...CONTEXT_WIDGET_IDS] as const;
 

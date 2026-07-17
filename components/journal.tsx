@@ -15,6 +15,8 @@ import { ImmichWidget, immichImageUrl } from "./widgets/immich-widget";
 import { ReferencesWidget } from "./widgets/references-widget";
 import type { Memory, WidgetPlacement } from "./widgets/types";
 import { WordCalendarWidget } from "./widgets/word-calendar-widget";
+import { WritingStatsWidget } from "./widgets/writing-stats-widget";
+import { SearchWidget } from "./widgets/search-widget";
 import { PhotoLightbox } from "./journal/photo-lightbox";
 import { RevisionsDialog } from "./journal/revisions-dialog";
 import { SettingsDialog } from "./journal/settings-dialog";
@@ -694,6 +696,8 @@ export default function Journal() {
     return layout.navigation.map((id) => {
       if (layout.hidden.includes(id)) return null;
       if (id === "calendar") return <WordCalendarWidget key={id} month={month} selected={selected} dayWords={dayWords} onMonthChange={setMonth} onSelect={choose} />;
+      if (id === "stats") return <WritingStatsWidget key={id} month={monthKey(month)} />;
+      if (id === "search") return <SearchWidget key={id} onSelect={choose} />;
       if (id === "tags") return <ReferencesWidget key={id} references={tags} kind="tag" />;
       return <ReferencesWidget key={id} references={people} kind="person" />;
     });

@@ -17,7 +17,7 @@ test("converts legacy provider order and tag visibility", () => {
     providerOrder: ["github", "archive", "immich"],
     showTagCloud: false,
   }), {
-    navigation: ["calendar", "tags", "people"],
+    navigation: ["calendar", "stats", "search", "tags", "people"],
     context: ["github", "archive", "immich"],
     hidden: ["tags", "people"],
   });
@@ -29,7 +29,7 @@ test("removes unknown and duplicate ids, keeps zones separate, and appends missi
     context: ["archive", "tags", "archive"],
     hidden: ["calendar", "tags", "tags", "unknown"],
   }), {
-    navigation: ["calendar", "people", "tags"],
+    navigation: ["calendar", "people", "stats", "search", "tags"],
     context: ["archive", "immich", "github"],
     hidden: ["tags"],
   });
@@ -40,12 +40,16 @@ test("keeps the calendar pinned first and visible", () => {
     navigation: ["tags", "calendar", "people"],
     context: ["immich", "archive", "github"],
     hidden: ["calendar"],
-  }), DEFAULT_WIDGET_LAYOUT);
+  }), {
+    navigation: ["calendar", "tags", "people", "stats", "search"],
+    context: ["immich", "archive", "github"],
+    hidden: [],
+  });
 });
 
 test("applies legacy updates to an existing canonical layout", () => {
   const layout = normalizeWidgetLayout({
-    navigation: ["calendar", "people", "tags"],
+    navigation: ["calendar", "people", "stats", "search", "tags"],
     context: ["archive", "github", "immich"],
     hidden: ["people", "github"],
   });
@@ -53,7 +57,7 @@ test("applies legacy updates to an existing canonical layout", () => {
     providerOrder: ["github", "immich", "archive"],
     showTagCloud: true,
   }), {
-    navigation: ["calendar", "people", "tags"],
+    navigation: ["calendar", "people", "stats", "search", "tags"],
     context: ["github", "immich", "archive"],
     hidden: ["github"],
   });
@@ -61,7 +65,7 @@ test("applies legacy updates to an existing canonical layout", () => {
 
 test("derives legacy settings from the canonical layout", () => {
   assert.deepEqual(legacyWidgetSettings(normalizeWidgetLayout({
-    navigation: ["calendar", "tags", "people"],
+    navigation: ["calendar", "stats", "search", "tags", "people"],
     context: ["github", "archive", "immich"],
     hidden: ["tags", "immich"],
   })), {
@@ -72,7 +76,7 @@ test("derives legacy settings from the canonical layout", () => {
 
 test("lets an older client update legacy fields when it echoes an unchanged canonical layout", () => {
   const current = normalizeWidgetLayout({
-    navigation: ["calendar", "people", "tags"],
+    navigation: ["calendar", "people", "search", "stats", "tags"],
     context: ["github", "archive", "immich"],
     hidden: ["immich"],
   });
@@ -81,7 +85,7 @@ test("lets an older client update legacy fields when it echoes an unchanged cano
     providerOrder: ["archive", "immich", "github"],
     showTagCloud: false,
   }), {
-    navigation: ["calendar", "people", "tags"],
+    navigation: ["calendar", "people", "search", "stats", "tags"],
     context: ["archive", "immich", "github"],
     hidden: ["immich", "tags", "people"],
   });
@@ -91,14 +95,14 @@ test("prefers a changed canonical layout over stale mirrored legacy fields", () 
   const current = normalizeWidgetLayout(DEFAULT_WIDGET_LAYOUT);
   assert.deepEqual(resolveWidgetLayoutUpdate(current, {
     widgetLayout: {
-      navigation: ["calendar", "people", "tags"],
+      navigation: ["calendar", "people", "search", "stats", "tags"],
       context: ["github", "archive", "immich"],
       hidden: ["people"],
     },
     providerOrder: current.context,
     showTagCloud: true,
   }), {
-    navigation: ["calendar", "people", "tags"],
+    navigation: ["calendar", "people", "search", "stats", "tags"],
     context: ["github", "archive", "immich"],
     hidden: ["people"],
   });

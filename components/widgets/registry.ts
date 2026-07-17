@@ -10,8 +10,10 @@ export type WidgetDefinition = {
 
 export const NAVIGATION_WIDGETS: Record<NavigationWidgetId, WidgetDefinition> = {
   calendar: { id: "calendar", label: "Month", zone: "navigation", defaultOrder: 0, hideable: false },
-  tags: { id: "tags", label: "Tags", zone: "navigation", defaultOrder: 1, hideable: true },
-  people: { id: "people", label: "People", zone: "navigation", defaultOrder: 2, hideable: true },
+  stats: { id: "stats", label: "Writing stats", zone: "navigation", defaultOrder: 1, hideable: true },
+  search: { id: "search", label: "Search", zone: "navigation", defaultOrder: 2, hideable: true },
+  tags: { id: "tags", label: "Tags", zone: "navigation", defaultOrder: 3, hideable: true },
+  people: { id: "people", label: "People", zone: "navigation", defaultOrder: 4, hideable: true },
 };
 
 export const CONTEXT_WIDGETS: Record<ContextWidgetId, WidgetDefinition> = {

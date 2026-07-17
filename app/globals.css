@@ -76,6 +76,37 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 }
 .tag-cloud a:hover { background: var(--accent-soft); color: var(--accent); }
 
+.writing-stats-widget, .search-widget { min-width: 0; display: grid; gap: 10px; padding-top: 18px; border-top: 1px solid var(--line); }
+.widget-heading { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 9px; }
+.widget-heading .eyebrow { margin: 0; }
+.widget-heading > span { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.widget-loading, .search-status { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.stats-feature { display: flex; align-items: baseline; gap: 7px; padding: 9px 10px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.stats-feature b { font: 700 25px/1 "Iowan Old Style", Georgia, serif; }
+.stats-feature span { font-size: 10px; font-weight: 650; }
+.stats-summary { display: grid; gap: 5px; margin: 0; }
+.stats-summary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.stats-summary dt { color: var(--muted); font-size: 10px; }
+.stats-summary dd { margin: 0; color: var(--ink); font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.stats-comparison { margin: 0; color: var(--muted); font-size: 9px; font-weight: 650; }
+.stats-comparison.positive { color: var(--success); }
+.stats-comparison.negative { color: var(--warning); }
+.journal-search-field { min-width: 0; height: 36px; display: grid; grid-template-columns: 20px minmax(0, 1fr) 24px; align-items: center; padding: 0 5px 0 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--muted); }
+.journal-search-field:focus-within { border-color: var(--button); box-shadow: 0 0 0 2px color-mix(in srgb, var(--button) 16%, transparent); }
+.journal-search-field input { width: 100%; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 10px; }
+.journal-search-field input::-webkit-search-cancel-button { display: none; }
+.journal-search-field button { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 16px; }
+.journal-search-field button:hover { background: var(--accent-soft); color: var(--ink); }
+.search-results { max-height: 310px; display: grid; gap: 5px; overflow-y: auto; scrollbar-width: thin; }
+.search-results > button { min-width: 0; display: grid; gap: 4px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); text-align: left; }
+.search-results > button:hover { border-color: var(--line-strong); background: var(--accent-soft); }
+.search-result-heading { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 9px; }
+.search-result-heading b { overflow: hidden; color: var(--accent); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-heading small { flex: 0 0 auto; color: var(--muted); font-size: 8px; }
+.search-result-excerpt { display: -webkit-box; overflow: hidden; color: var(--muted); font: 11px/1.35 "Iowan Old Style", Georgia, serif; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.search-result-matches { display: flex; flex-wrap: wrap; gap: 3px; }
+.search-result-matches i { padding: 2px 4px; border-radius: 4px; background: var(--surface); color: var(--muted); font-size: 7px; font-style: normal; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+
 .side-actions { margin-top: auto; display: grid; gap: 4px; }
 .side-actions button {
   display: flex;
@@ -600,6 +631,8 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
   .sheet-backdrop { align-items: end; padding: 0; }
   .calendar-sheet { width: 100%; padding: 21px 20px calc(24px + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 20px 20px 0 0; }
   .calendar-sheet .tag-browser { max-width: 380px; margin: 20px auto 0; }
+  .calendar-sheet .writing-stats-widget, .calendar-sheet .search-widget { max-width: 380px; margin: 20px auto 0; }
+  .calendar-sheet .search-results { max-height: 240px; }
   .modal-backdrop { align-items: end; padding: 0; }
   .settings, .revisions-panel { width: 100%; max-height: 88dvh; padding: 22px 18px calc(22px + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 20px 20px 0 0; }
   .reminder-row { grid-template-columns: 1fr; }
