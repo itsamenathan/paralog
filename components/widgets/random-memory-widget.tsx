@@ -18,7 +18,7 @@ export function RandomMemoryWidget({ memory, selected, scope, loading, placement
 }) {
   if (!loading && !memory) return null;
   const titleId = `random-memory-title-${placement}`;
-  return <MemoryWidgetShell placement={placement} widgetClass="widget-random" titleId={titleId} eyebrow="RANDOM MEMORY" title="A page from the past" action={<button type="button" onClick={onRefresh} disabled={loading} aria-label="Show another random memory">Another</button>}>
+  return <MemoryWidgetShell placement={placement} widgetClass="widget-random" titleId={titleId} eyebrow="RANDOM MEMORY" title="A page from your journal" action={<button type="button" onClick={onRefresh} disabled={loading} aria-label="Show another random memory">Another</button>}>
     <div className="random-memory-scopes" aria-label="Random memory range">
       {(Object.keys(scopeLabels) as RandomMemoryScope[]).map((value) => <button type="button" key={value} aria-pressed={scope === value} onClick={() => onScopeChange(value)}>{scopeLabels[value]}</button>)}
     </div>

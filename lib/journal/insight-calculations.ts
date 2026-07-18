@@ -74,7 +74,7 @@ export function selectRandomMemory(
 ): RandomMemory | null {
   const selectedMonth = Number(selected.slice(5, 7));
   const candidates = documents.flatMap((document) => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(document.date) || document.date >= selected) return [];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(document.date) || document.date === selected) return [];
     const documentMonth = Number(document.date.slice(5, 7));
     if (scope === "month" && documentMonth !== selectedMonth) return [];
     if (scope === "season" && season(documentMonth) !== season(selectedMonth)) return [];

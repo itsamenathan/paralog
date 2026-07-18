@@ -128,26 +128,27 @@ const memoryDocuments = [
   { date: "2024-07-03", content: "---\ntitle: Hidden\n---\nA **July** memory with [a link](https://example.com)." },
   { date: "2025-06-22", content: "A summer memory." },
   { date: "2026-07-17", content: "The selected entry is never a memory." },
-  { date: "2026-07-18", content: "Future entries are never memories." },
+  { date: "2026-07-18", content: "A later entry can be a memory too." },
   { date: "2022-07-01", content: "---\ntitle: Empty\n---\n" },
 ];
 
-test("random memories only select older non-empty entries", () => {
-  assert.deepEqual(selectRandomMemory(memoryDocuments, "2026-07-17", "all", () => 0), {
+test("random memories select non-empty entries from before or after the selected date", () => {
+  assert.deepEqual(selectRandomMemory(memoryDocuments, "2014-07-17", "all", () => 0), {
     date: "2023-01-08",
     excerpt: "A winter memory.",
     words: 3,
   });
-  assert.equal(selectRandomMemory(memoryDocuments.slice(4), "2026-07-17", "all", () => 0), null);
+  assert.equal(selectRandomMemory(memoryDocuments, "2014-07-17", "all", () => 0.99)?.date, "2026-07-18");
+  assert.equal(selectRandomMemory(memoryDocuments.slice(4, 5), "2026-07-17", "all", () => 0), null);
 });
 
-test("random memory month and season scopes span prior years", () => {
-  assert.deepEqual(selectRandomMemory(memoryDocuments, "2026-07-17", "month", () => 0), {
+test("random memory month and season scopes span years in either direction", () => {
+  assert.deepEqual(selectRandomMemory(memoryDocuments, "2014-07-17", "month", () => 0), {
     date: "2024-07-03",
     excerpt: "A July memory with a link.",
     words: 6,
   });
-  assert.equal(selectRandomMemory(memoryDocuments, "2026-07-17", "season", () => 0.99)?.date, "2025-06-22");
+  assert.equal(selectRandomMemory(memoryDocuments, "2014-07-17", "season", () => 0.99)?.date, "2026-07-18");
 });
 
 const validSchedule = {
