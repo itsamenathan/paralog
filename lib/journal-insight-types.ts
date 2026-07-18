@@ -2,7 +2,6 @@ export type WritingStats = {
   month: string;
   totalWords: number;
   activeDays: number;
-  averageEntryLength: number;
   longestStreak: number;
   previousMonthWords: number;
   wordChange: number;
@@ -16,4 +15,12 @@ export type JournalSearchResult = {
   excerpt: string;
   words: number;
   matches: SearchMatchKind[];
+};
+
+export type RandomMemoryScope = "all" | "month" | "season";
+
+export type RandomMemory = {
+  date: string;
+  excerpt: string;
+  words: number;
 };

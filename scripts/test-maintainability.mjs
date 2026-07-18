@@ -6,7 +6,7 @@ import { exitEmptyMarkdownBlock } from "../lib/editor/commands.ts";
 import { journalWordCount, markdownBody, setLocationFrontMatter } from "../lib/front-matter.ts";
 import { renderEntryPath, resolveEntryPath, validateSaveFormat } from "../lib/journal/path-format.ts";
 import { revisionChanges } from "../lib/journal/revision-diff.ts";
-import { calculateWritingStats, searchJournalDocuments } from "../lib/journal/insight-calculations.ts";
+import { calculateWritingStats, searchJournalDocuments, selectRandomMemory } from "../lib/journal/insight-calculations.ts";
 import { journalReferences } from "../lib/markdown-references.ts";
 import { localClock, notificationDue } from "../lib/notifications/clock.ts";
 import { cleanSchedule, validTimezone } from "../lib/notifications/validation.ts";
@@ -89,12 +89,11 @@ const insightDocuments = [
   { date: "2026-07-05", content: "The compact search should find a phrase near the end." },
 ];
 
-test("writing stats calculate monthly totals, averages, comparisons, and all-time streaks", () => {
+test("writing stats calculate monthly totals, active days, comparisons, and all-time streaks", () => {
   assert.deepEqual(calculateWritingStats(insightDocuments, "2026-07"), {
     month: "2026-07",
     totalWords: 23,
     activeDays: 4,
-    averageEntryLength: 6,
     longestStreak: 2,
     previousMonthWords: 6,
     wordChange: 17,
@@ -121,6 +120,34 @@ test("journal search prioritizes exact dates and respects its result limit", () 
   assert.equal(results.length, 1);
   assert.equal(results[0].date, "2026-07-04");
   assert.equal(results[0].matches[0], "date");
+});
+
+const memoryDocuments = [
+  { date: "2023-01-08", content: "A winter memory." },
+  { date: "2024-04-12", content: "A spring memory." },
+  { date: "2024-07-03", content: "---\ntitle: Hidden\n---\nA **July** memory with [a link](https://example.com)." },
+  { date: "2025-06-22", content: "A summer memory." },
+  { date: "2026-07-17", content: "The selected entry is never a memory." },
+  { date: "2026-07-18", content: "Future entries are never memories." },
+  { date: "2022-07-01", content: "---\ntitle: Empty\n---\n" },
+];
+
+test("random memories only select older non-empty entries", () => {
+  assert.deepEqual(selectRandomMemory(memoryDocuments, "2026-07-17", "all", () => 0), {
+    date: "2023-01-08",
+    excerpt: "A winter memory.",
+    words: 3,
+  });
+  assert.equal(selectRandomMemory(memoryDocuments.slice(4), "2026-07-17", "all", () => 0), null);
+});
+
+test("random memory month and season scopes span prior years", () => {
+  assert.deepEqual(selectRandomMemory(memoryDocuments, "2026-07-17", "month", () => 0), {
+    date: "2024-07-03",
+    excerpt: "A July memory with a link.",
+    words: 6,
+  });
+  assert.equal(selectRandomMemory(memoryDocuments, "2026-07-17", "season", () => 0.99)?.date, "2025-06-22");
 });
 
 const validSchedule = {

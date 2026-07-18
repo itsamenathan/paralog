@@ -1,4 +1,4 @@
-import type { JournalSearchResult, SearchMatchKind, WritingStats } from "../journal-insight-types";
+import type { JournalSearchResult, RandomMemory, RandomMemoryScope, SearchMatchKind, WritingStats } from "../journal-insight-types";
 
 export type JournalDocument = { date: string; content: string };
 
@@ -52,12 +52,38 @@ export function calculateWritingStats(documents: JournalDocument[], month: strin
     month,
     totalWords,
     activeDays: current.length,
-    averageEntryLength: current.length ? Math.round(totalWords / current.length) : 0,
     longestStreak: longestDateStreak(active.map((document) => document.date)),
     previousMonthWords,
     wordChange,
     percentChange: previousMonthWords ? Math.round((wordChange / previousMonthWords) * 100) : null,
   };
+}
+
+function season(month: number) {
+  if (month === 12 || month <= 2) return "winter";
+  if (month <= 5) return "spring";
+  if (month <= 8) return "summer";
+  return "autumn";
+}
+
+export function selectRandomMemory(
+  documents: JournalDocument[],
+  selected: string,
+  scope: RandomMemoryScope,
+  random: () => number = Math.random,
+): RandomMemory | null {
+  const selectedMonth = Number(selected.slice(5, 7));
+  const candidates = documents.flatMap((document) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(document.date) || document.date >= selected) return [];
+    const documentMonth = Number(document.date.slice(5, 7));
+    if (scope === "month" && documentMonth !== selectedMonth) return [];
+    if (scope === "season" && season(documentMonth) !== season(selectedMonth)) return [];
+    const words = journalWordCount(document.content);
+    return words > 0 ? [{ date: document.date, excerpt: plainText(document.content).slice(0, 180), words }] : [];
+  });
+  if (candidates.length === 0) return null;
+  const index = Math.min(candidates.length - 1, Math.max(0, Math.floor(random() * candidates.length)));
+  return candidates[index];
 }
 
 function plainText(content: string) {

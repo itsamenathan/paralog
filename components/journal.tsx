@@ -17,12 +17,14 @@ import type { Memory, WidgetPlacement } from "./widgets/types";
 import { WordCalendarWidget } from "./widgets/word-calendar-widget";
 import { WritingStatsWidget } from "./widgets/writing-stats-widget";
 import { SearchWidget } from "./widgets/search-widget";
+import { RandomMemoryWidget } from "./widgets/random-memory-widget";
 import { PhotoLightbox } from "./journal/photo-lightbox";
 import { RevisionsDialog } from "./journal/revisions-dialog";
 import { SettingsDialog } from "./journal/settings-dialog";
 import { unsubscribeCurrentDevice } from "./journal/notification-preferences";
 import { useDayContext } from "./journal/use-day-context";
 import { useJournalReferences } from "./journal/use-journal-references";
+import { useRandomMemory } from "./journal/use-random-memory";
 import { useTheme } from "./journal/use-theme";
 import type { JournalSettings } from "./journal/types";
 
@@ -145,6 +147,7 @@ export default function Journal() {
   const [settings, setSettings] = useState<JournalSettings | null>(null);
   const { tags, people, refreshReferences: loadReferences } = useJournalReferences();
   const { activities, photos, photoTotal } = useDayContext(selected);
+  const randomMemory = useRandomMemory(selected);
   const [openPhoto, setOpenPhoto] = useState<DayPhoto | null>(null);
   const [loadedPhotoId, setLoadedPhotoId] = useState<string | null>(null);
   const [showOutline, setShowOutline] = useState(false);
@@ -709,6 +712,7 @@ export default function Journal() {
       if (layout.hidden.includes(provider)) return null;
       if (provider === "immich") return <ImmichWidget key={provider} photos={photos} total={photoTotal} selected={selected} placement={placement} onOpen={setOpenPhoto} />;
       if (provider === "archive") return <ArchiveWidget key={provider} memories={entry.memories} selected={selected} expanded={showAllMemories} placement={placement} onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />;
+      if (provider === "random") return <RandomMemoryWidget key={provider} memory={randomMemory.memory} selected={selected} scope={randomMemory.scope} loading={randomMemory.loading} placement={placement} onScopeChange={randomMemory.setScope} onRefresh={randomMemory.refresh} onChoose={choose} />;
       const activity = activities.find((item): item is DaySummaryActivity => item.kind === "summary" && item.provider === provider);
       return activity ? <ActivityWidget key={provider} activity={activity} placement={placement} /> : null;
     });

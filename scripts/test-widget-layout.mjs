@@ -18,7 +18,7 @@ test("converts legacy provider order and tag visibility", () => {
     showTagCloud: false,
   }), {
     navigation: ["calendar", "stats", "search", "tags", "people"],
-    context: ["github", "archive", "immich"],
+    context: ["github", "archive", "immich", "random"],
     hidden: ["tags", "people"],
   });
 });
@@ -27,22 +27,22 @@ test("removes unknown and duplicate ids, keeps zones separate, and appends missi
   assert.deepEqual(normalizeWidgetLayout({
     navigation: ["people", "github", "people"],
     context: ["archive", "tags", "archive"],
-    hidden: ["calendar", "tags", "tags", "unknown"],
+    hidden: ["calendar", "tags", "random", "tags", "unknown"],
   }), {
     navigation: ["calendar", "people", "stats", "search", "tags"],
-    context: ["archive", "immich", "github"],
-    hidden: ["tags"],
+    context: ["archive", "immich", "github", "random"],
+    hidden: ["tags", "random"],
   });
 });
 
 test("keeps the calendar pinned first and visible", () => {
   assert.deepEqual(normalizeWidgetLayout({
     navigation: ["tags", "calendar", "people"],
-    context: ["immich", "archive", "github"],
+    context: ["immich", "archive", "github", "random"],
     hidden: ["calendar"],
   }), {
     navigation: ["calendar", "tags", "people", "stats", "search"],
-    context: ["immich", "archive", "github"],
+    context: ["immich", "archive", "github", "random"],
     hidden: [],
   });
 });
@@ -50,7 +50,7 @@ test("keeps the calendar pinned first and visible", () => {
 test("applies legacy updates to an existing canonical layout", () => {
   const layout = normalizeWidgetLayout({
     navigation: ["calendar", "people", "stats", "search", "tags"],
-    context: ["archive", "github", "immich"],
+    context: ["archive", "github", "immich", "random"],
     hidden: ["people", "github"],
   });
   assert.deepEqual(applyLegacyWidgetSettings(layout, {
@@ -58,7 +58,7 @@ test("applies legacy updates to an existing canonical layout", () => {
     showTagCloud: true,
   }), {
     navigation: ["calendar", "people", "stats", "search", "tags"],
-    context: ["github", "immich", "archive"],
+    context: ["github", "immich", "archive", "random"],
     hidden: ["github"],
   });
 });
@@ -66,7 +66,7 @@ test("applies legacy updates to an existing canonical layout", () => {
 test("derives legacy settings from the canonical layout", () => {
   assert.deepEqual(legacyWidgetSettings(normalizeWidgetLayout({
     navigation: ["calendar", "stats", "search", "tags", "people"],
-    context: ["github", "archive", "immich"],
+    context: ["github", "archive", "immich", "random"],
     hidden: ["tags", "immich"],
   })), {
     providerOrder: ["github", "archive", "immich"],
@@ -77,7 +77,7 @@ test("derives legacy settings from the canonical layout", () => {
 test("lets an older client update legacy fields when it echoes an unchanged canonical layout", () => {
   const current = normalizeWidgetLayout({
     navigation: ["calendar", "people", "search", "stats", "tags"],
-    context: ["github", "archive", "immich"],
+    context: ["github", "random", "archive", "immich"],
     hidden: ["immich"],
   });
   assert.deepEqual(resolveWidgetLayoutUpdate(current, {
@@ -86,7 +86,7 @@ test("lets an older client update legacy fields when it echoes an unchanged cano
     showTagCloud: false,
   }), {
     navigation: ["calendar", "people", "search", "stats", "tags"],
-    context: ["archive", "immich", "github"],
+    context: ["archive", "random", "immich", "github"],
     hidden: ["immich", "tags", "people"],
   });
 });
@@ -96,14 +96,14 @@ test("prefers a changed canonical layout over stale mirrored legacy fields", () 
   assert.deepEqual(resolveWidgetLayoutUpdate(current, {
     widgetLayout: {
       navigation: ["calendar", "people", "search", "stats", "tags"],
-      context: ["github", "archive", "immich"],
+      context: ["github", "archive", "immich", "random"],
       hidden: ["people"],
     },
     providerOrder: current.context,
     showTagCloud: true,
   }), {
     navigation: ["calendar", "people", "search", "stats", "tags"],
-    context: ["github", "archive", "immich"],
+    context: ["github", "archive", "immich", "random"],
     hidden: ["people"],
   });
 });

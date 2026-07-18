@@ -20,6 +20,7 @@ export const CONTEXT_WIDGETS: Record<ContextWidgetId, WidgetDefinition> = {
   immich: { id: "immich", label: "Immich", zone: "context", defaultOrder: 0, hideable: true },
   archive: { id: "archive", label: "Your archive", zone: "context", defaultOrder: 1, hideable: true },
   github: { id: "github", label: "GitHub", zone: "context", defaultOrder: 2, hideable: true },
+  random: { id: "random", label: "Random memory", zone: "context", defaultOrder: 3, hideable: true },
 };
 
 export const WIDGETS: Record<WidgetId, WidgetDefinition> = { ...NAVIGATION_WIDGETS, ...CONTEXT_WIDGETS };

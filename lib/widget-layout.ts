@@ -1,6 +1,7 @@
 export const NAVIGATION_WIDGET_IDS = ["calendar", "stats", "search", "tags", "people"] as const;
-export const CONTEXT_WIDGET_IDS = ["immich", "archive", "github"] as const;
+export const CONTEXT_WIDGET_IDS = ["immich", "archive", "github", "random"] as const;
 export const WIDGET_IDS = [...NAVIGATION_WIDGET_IDS, ...CONTEXT_WIDGET_IDS] as const;
+const LEGACY_PROVIDER_IDS: readonly ContextWidgetId[] = ["immich", "archive", "github"];
 
 export type NavigationWidgetId = typeof NAVIGATION_WIDGET_IDS[number];
 export type ContextWidgetId = typeof CONTEXT_WIDGET_IDS[number];
@@ -70,9 +71,14 @@ export function applyLegacyWidgetSettings(
       else hidden.add(id);
     }
   }
+  const legacyOrder = values.providerOrder === undefined ? null : orderedIds(values.providerOrder, LEGACY_PROVIDER_IDS);
+  let legacyIndex = 0;
+  const context = legacyOrder ? layout.context.map((id) =>
+    LEGACY_PROVIDER_IDS.includes(id) ? legacyOrder[legacyIndex++] : id,
+  ) : layout.context;
   return normalizeWidgetLayout({
     ...layout,
-    context: values.providerOrder === undefined ? layout.context : values.providerOrder,
+    context,
     hidden: [...hidden],
   });
 }
@@ -88,7 +94,7 @@ export function resolveWidgetLayoutUpdate(
 
 export function legacyWidgetSettings(layout: WidgetLayout) {
   return {
-    providerOrder: [...layout.context],
+    providerOrder: layout.context.filter((id) => LEGACY_PROVIDER_IDS.includes(id)),
     showTagCloud: !layout.hidden.includes("tags") || !layout.hidden.includes("people"),
   };
 }

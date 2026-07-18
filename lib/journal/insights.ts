@@ -2,8 +2,9 @@ import { desc } from "drizzle-orm";
 import fs from "node:fs";
 import { db } from "@/lib/db";
 import { entries } from "@/lib/db/schema";
-import { calculateWritingStats, searchJournalDocuments, type JournalDocument } from "./insight-calculations";
+import { calculateWritingStats, searchJournalDocuments, selectRandomMemory, type JournalDocument } from "./insight-calculations";
 import { discoverEntries } from "./discovery";
+import type { RandomMemoryScope } from "../journal-insight-types";
 
 function journalDocuments(): JournalDocument[] {
   discoverEntries();
@@ -18,4 +19,8 @@ export function writingStats(month: string) {
 
 export function searchEntries(query: string, limit = 8) {
   return searchJournalDocuments(journalDocuments(), query, limit);
+}
+
+export function randomMemory(date: string, scope: RandomMemoryScope) {
+  return selectRandomMemory(journalDocuments(), date, scope);
 }

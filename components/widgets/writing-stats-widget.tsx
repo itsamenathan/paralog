@@ -38,7 +38,6 @@ export function WritingStatsWidget({ month }: { month: string }) {
       <dl className="stats-summary">
         <div><dt>Total words</dt><dd>{number.format(stats.totalWords)}</dd></div>
         <div><dt>Active days</dt><dd>{stats.activeDays}</dd></div>
-        <div><dt>Average entry</dt><dd>{number.format(stats.averageEntryLength)}</dd></div>
       </dl>
       <p className={`stats-comparison ${stats.wordChange > 0 ? "positive" : stats.wordChange < 0 ? "negative" : ""}`}>{comparison(stats)}</p>
     </>}
