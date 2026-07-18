@@ -39,8 +39,9 @@ export function WritingStatsWidget({ month }: { month: string }) {
       <div className="stats-feature"><b>{stats.currentStreak}</b><span>day current streak</span></div>
       <dl className="stats-summary">
         <div><dt>Longest streak</dt><dd>{stats.longestStreak} {stats.longestStreak === 1 ? "day" : "days"}</dd></div>
-        <div><dt>Total words</dt><dd>{number.format(stats.totalWords)}</dd></div>
-        <div><dt>Active days</dt><dd>{stats.activeDays}</dd></div>
+        <div><dt>Words this month</dt><dd>{number.format(stats.totalWords)}</dd></div>
+        <div><dt>Days written this month</dt><dd>{stats.activeDays}</dd></div>
+        <div><dt className="stats-summary-detail">Average words per entry this month</dt><dd>{number.format(stats.activeDays ? Math.round(stats.totalWords / stats.activeDays) : 0)}</dd></div>
       </dl>
       <p className={`stats-comparison ${stats.wordChange > 0 ? "positive" : stats.wordChange < 0 ? "negative" : ""}`}>{comparison(stats)}</p>
     </>}

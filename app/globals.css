@@ -87,6 +87,7 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 .stats-summary { display: grid; gap: 5px; margin: 0; }
 .stats-summary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .stats-summary dt { color: var(--muted); font-size: 10px; }
+.stats-summary dt.stats-summary-detail { font-size: 9px; }
 .stats-summary dd { margin: 0; color: var(--ink); font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .stats-comparison { margin: 0; color: var(--muted); font-size: 9px; font-weight: 650; }
 .stats-comparison.positive { color: var(--success); }
