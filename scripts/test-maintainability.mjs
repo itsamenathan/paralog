@@ -89,11 +89,12 @@ const insightDocuments = [
   { date: "2026-07-05", content: "The compact search should find a phrase near the end." },
 ];
 
-test("writing stats calculate monthly totals, active days, comparisons, and all-time streaks", () => {
-  assert.deepEqual(calculateWritingStats(insightDocuments, "2026-07"), {
+test("writing stats calculate monthly totals, active days, comparisons, and streaks", () => {
+  assert.deepEqual(calculateWritingStats(insightDocuments, "2026-07", "2026-07-06"), {
     month: "2026-07",
     totalWords: 23,
     activeDays: 4,
+    currentStreak: 2,
     longestStreak: 2,
     previousMonthWords: 6,
     wordChange: 17,
@@ -102,9 +103,16 @@ test("writing stats calculate monthly totals, active days, comparisons, and all-
 });
 
 test("writing stats handle a month with no prior words", () => {
-  const stats = calculateWritingStats(insightDocuments, "2026-06");
+  const stats = calculateWritingStats(insightDocuments, "2026-06", "2026-07-07");
   assert.equal(stats.previousMonthWords, 0);
   assert.equal(stats.percentChange, null);
+  assert.equal(stats.currentStreak, 0);
+});
+
+test("current writing streak includes today when active and otherwise allows yesterday", () => {
+  assert.equal(calculateWritingStats(insightDocuments, "2026-07", "2026-07-05").currentStreak, 2);
+  assert.equal(calculateWritingStats(insightDocuments, "2026-07", "2026-07-06").currentStreak, 2);
+  assert.equal(calculateWritingStats(insightDocuments, "2026-07", "2026-07-07").currentStreak, 0);
 });
 
 test("journal search finds text, tags, people, and partial dates", () => {

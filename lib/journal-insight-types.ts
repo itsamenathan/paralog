@@ -2,6 +2,7 @@ export type WritingStats = {
   month: string;
   totalWords: number;
   activeDays: number;
+  currentStreak: number;
   longestStreak: number;
   previousMonthWords: number;
   wordChange: number;

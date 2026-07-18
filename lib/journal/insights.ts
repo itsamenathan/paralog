@@ -13,8 +13,8 @@ function journalDocuments(): JournalDocument[] {
   );
 }
 
-export function writingStats(month: string) {
-  return calculateWritingStats(journalDocuments(), month);
+export function writingStats(month: string, today?: string) {
+  return calculateWritingStats(journalDocuments(), month, today);
 }
 
 export function searchEntries(query: string, limit = 8) {

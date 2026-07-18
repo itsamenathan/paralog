@@ -41,7 +41,24 @@ function longestDateStreak(dates: string[]) {
   return longest;
 }
 
-export function calculateWritingStats(documents: JournalDocument[], month: string): WritingStats {
+function previousDate(date: string) {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() - 1);
+  return value.toISOString().slice(0, 10);
+}
+
+function currentDateStreak(dates: string[], today: string) {
+  const active = new Set(dates);
+  let date = active.has(today) ? today : previousDate(today);
+  let streak = 0;
+  while (active.has(date)) {
+    streak += 1;
+    date = previousDate(date);
+  }
+  return streak;
+}
+
+export function calculateWritingStats(documents: JournalDocument[], month: string, today = new Date().toISOString().slice(0, 10)): WritingStats {
   const active = documents.map((document) => ({ ...document, words: journalWordCount(document.content) })).filter((document) => document.words > 0);
   const current = active.filter((document) => document.date.startsWith(`${month}-`));
   const previous = active.filter((document) => document.date.startsWith(`${previousMonth(month)}-`));
@@ -52,6 +69,7 @@ export function calculateWritingStats(documents: JournalDocument[], month: strin
     month,
     totalWords,
     activeDays: current.length,
+    currentStreak: currentDateStreak(active.map((document) => document.date), today),
     longestStreak: longestDateStreak(active.map((document) => document.date)),
     previousMonthWords,
     wordChange,

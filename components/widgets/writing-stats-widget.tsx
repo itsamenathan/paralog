@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { WritingStats } from "@/lib/journal-insight-types";
+import { iso } from "./date-utils";
 
 const number = new Intl.NumberFormat("en-US");
 
@@ -15,27 +16,29 @@ function comparison(stats: WritingStats) {
 export function WritingStatsWidget({ month }: { month: string }) {
   const [stats, setStats] = useState<WritingStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const today = iso(new Date());
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
     setStats(null);
     setLoading(true);
-    fetch(`/api/stats?month=${month}`, { cache: "no-store", signal: controller.signal })
+    fetch(`/api/stats?${new URLSearchParams({ month, today })}`, { cache: "no-store", signal: controller.signal })
       .then((response) => response.ok ? response.json() : null)
       .then((value) => { if (active && value) setStats(value); })
       .catch(() => undefined)
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; controller.abort(); };
-  }, [month]);
+  }, [month, today]);
 
   if (!loading && (!stats || (stats.activeDays === 0 && stats.longestStreak === 0))) return null;
   const label = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${month}-01T00:00:00Z`));
   return <section className="writing-stats-widget widget widget-stats" aria-label={`Writing statistics for ${label}`}>
     <div className="widget-heading"><p className="eyebrow">WRITING STATS</p><span>{label}</span></div>
     {loading && !stats ? <p className="widget-loading">Calculating…</p> : stats && <>
-      <div className="stats-feature"><b>{stats.longestStreak}</b><span>day longest streak</span></div>
+      <div className="stats-feature"><b>{stats.currentStreak}</b><span>day current streak</span></div>
       <dl className="stats-summary">
+        <div><dt>Longest streak</dt><dd>{stats.longestStreak} {stats.longestStreak === 1 ? "day" : "days"}</dd></div>
         <div><dt>Total words</dt><dd>{number.format(stats.totalWords)}</dd></div>
         <div><dt>Active days</dt><dd>{stats.activeDays}</dd></div>
       </dl>
