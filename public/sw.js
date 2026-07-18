@@ -1,6 +1,6 @@
-const SHELL_CACHE = "paralog-shell-v4";
-const RUNTIME_CACHE = "paralog-runtime-v4";
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+const SHELL_CACHE = "paralog-shell-v5";
+const RUNTIME_CACHE = "paralog-runtime-v5";
+const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/notification-badge.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -29,7 +29,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, {
     body,
     icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    badge: "/notification-badge.png",
     tag,
     renotify: false,
     data: { url },
