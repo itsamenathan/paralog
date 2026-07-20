@@ -270,12 +270,13 @@ type LiveMarkdownEditorProps = {
   vimMode: boolean;
   tags: ReferenceSuggestion[];
   people: ReferenceSuggestion[];
+  onBeforeAttachmentNavigation: () => void;
 };
 
 type ReferenceSuggestion = { name: string; count: number };
 type ReferenceQuery = { kind: "tag" | "person"; query: string; from: number; to: number };
 
-export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people }: LiveMarkdownEditorProps) {
+export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people, onBeforeAttachmentNavigation }: LiveMarkdownEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const vimCompartment = useRef(new Compartment());
@@ -663,6 +664,6 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       <button type="button" aria-label="Link selection" onClick={() => setShowLinkInput(true)}>↗</button>
       <button type="button" aria-label="Code selection" onClick={() => wrap("`")}>{"<>"}</button>
     </div>}
-    <AttachmentPicker open={pickerMode !== null} mode={pickerMode || "all"} entryDate={entryDate} online={online} onClose={() => setPickerMode(null)} onInsert={(markdown) => insertMarkdown(markdown, pickerPosition ?? undefined)} />
+    <AttachmentPicker open={pickerMode !== null} mode={pickerMode || "all"} entryDate={entryDate} online={online} onClose={() => setPickerMode(null)} onInsert={(markdown) => insertMarkdown(markdown, pickerPosition ?? undefined)} onBeforeNavigate={onBeforeAttachmentNavigation} />
   </div>;
 }

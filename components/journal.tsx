@@ -277,6 +277,17 @@ export default function Journal() {
     }
   }, [selected]);
 
+  const flushDirtyEntry = useCallback(() => {
+    if (!dirtyRef.current) return;
+    const current = entryRef.current;
+    void persistEntry(selectedRef.current, current.content, current);
+  }, [persistEntry]);
+
+  const openAttachments = useCallback(() => {
+    flushDirtyEntry();
+    window.location.assign("/attachments");
+  }, [flushDirtyEntry]);
+
   const loadEntry = useCallback(async (date: string, signal?: AbortSignal) => {
     setLoading(true);
     const cached = readCachedEntry(date);
@@ -767,7 +778,7 @@ export default function Journal() {
         <button className="today-button" type="button" onClick={() => choose(today)}><span>Today</span><b aria-hidden="true">↗</b></button>
         {navigationWidgets()}
         <div className="side-actions">
-          <a href="/attachments"><span className="action-icon" aria-hidden="true">▧</span><span className="action-label">Attachments</span></a>
+          <button type="button" onClick={openAttachments}><span className="action-icon" aria-hidden="true">▧</span><span className="action-label">Attachments</span></button>
           <button type="button" onClick={() => setDark(!dark)}><span className="action-icon" aria-hidden="true">{dark ? "☀" : "◐"}</span><span className="action-label">{dark ? "Light mode" : "Dark mode"}</span></button>
           <button type="button" onClick={() => setShowSettings(true)}><span className="action-icon" aria-hidden="true">⚙</span><span className="action-label">Settings</span></button>
           <button type="button" onClick={signOut}><span className="action-icon" aria-hidden="true">↪</span><span className="action-label">Sign out</span></button>
@@ -779,7 +790,7 @@ export default function Journal() {
         <div>
           <button type="button" onClick={() => choose(today)} aria-label="Go to today">Today</button>
           <button type="button" onClick={() => setShowCalendar(true)} aria-label="Open calendar"><span aria-hidden="true">▦</span></button>
-          <a href="/attachments" aria-label="Open attachments"><span aria-hidden="true">▧</span></a>
+          <button type="button" onClick={openAttachments} aria-label="Open attachments"><span aria-hidden="true">▧</span></button>
           <button type="button" onClick={() => setDark(!dark)} aria-label={dark ? "Use light mode" : "Use dark mode"}><span aria-hidden="true">{dark ? "☀" : "◐"}</span></button>
           <button type="button" onClick={() => setShowSettings(true)} aria-label="Open settings"><span aria-hidden="true">⚙</span></button>
         </div>
@@ -840,7 +851,7 @@ export default function Journal() {
           <button className="template-button" type="button" onClick={() => changeContent(entry.template)}>Start with your template →</button>
         )}
         <div className={`editor-frame ${loading ? "loading" : ""}`}>
-          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} entryDate={selected} online={online} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} />}
+          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} entryDate={selected} online={online} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} onBeforeAttachmentNavigation={flushDirtyEntry} />}
         </div>
         </div>
         <aside className="entry-context-column" aria-label="Daily activity and archive memories">
@@ -875,7 +886,7 @@ export default function Journal() {
         onRestore={restoreRevision}
       />}
 
-      <AttachmentPicker open={attachmentPicker !== null} mode={attachmentPicker || "all"} entryDate={selected} online={online} onClose={() => setAttachmentPicker(null)} onInsert={appendAttachments} />
+      <AttachmentPicker open={attachmentPicker !== null} mode={attachmentPicker || "all"} entryDate={selected} online={online} onClose={() => setAttachmentPicker(null)} onInsert={appendAttachments} onBeforeNavigate={flushDirtyEntry} />
 
       {openPhoto && <PhotoLightbox
         photo={openPhoto}

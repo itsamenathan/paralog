@@ -19,6 +19,7 @@ export function AttachmentPicker({
   online,
   onClose,
   onInsert,
+  onBeforeNavigate,
 }: {
   open: boolean;
   mode: "all" | AttachmentKind;
@@ -26,6 +27,7 @@ export function AttachmentPicker({
   online: boolean;
   onClose: () => void;
   onInsert: (markdown: string[]) => void;
+  onBeforeNavigate: () => void;
 }) {
   const [items, setItems] = useState<AttachmentSummary[]>([]);
   const [query, setQuery] = useState("");
@@ -139,7 +141,7 @@ export function AttachmentPicker({
           <span title={item.displayName}>{item.displayName}</span><small>{item.references.length ? `${item.references.length} linked ${item.references.length === 1 ? "entry" : "entries"}` : "Unlinked"}</small>
         </button>)}
       </div>
-      <footer><Link href={`/attachments?entry=${entryDate}`}>Manage library</Link><span /><button type="button" className="text-button" onClick={onClose}>Cancel</button><button type="button" className="save-button" disabled={chosen.length === 0} onClick={() => { onInsert(chosen.map(attachmentMarkdown)); onClose(); }}>Insert {chosen.length || ""}</button></footer>
+      <footer><Link href={`/attachments?entry=${entryDate}`} onClick={onBeforeNavigate}>Manage library</Link><span /><button type="button" className="text-button" onClick={onClose}>Cancel</button><button type="button" className="save-button" disabled={chosen.length === 0} onClick={() => { onInsert(chosen.map(attachmentMarkdown)); onClose(); }}>Insert {chosen.length || ""}</button></footer>
     </section>
   </div>;
 }
