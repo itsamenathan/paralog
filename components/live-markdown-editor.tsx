@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { basicSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";
-import { Compartment, EditorState, Prec, type Extension, type Range } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Prec, type Extension, type Range } from "@codemirror/state";
 import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
@@ -27,13 +27,17 @@ import {
 class ImageWidget extends WidgetType {
   constructor(private src: string, private alt: string) { super(); }
   eq(widget: ImageWidget) { return widget.src === this.src && widget.alt === this.alt; }
-  toDOM() {
+  toDOM(view: EditorView) {
     const figure = document.createElement("figure");
     figure.className = "cm-live-image";
     const image = document.createElement("img");
     image.src = this.src;
     image.alt = this.alt;
     image.loading = "lazy";
+    const scheduleMeasure = () => window.requestAnimationFrame(() => view.requestMeasure());
+    image.addEventListener("load", scheduleMeasure, { once: true });
+    image.addEventListener("error", scheduleMeasure, { once: true });
+    if (image.complete) scheduleMeasure();
     figure.append(image);
     if (this.alt) {
       const caption = document.createElement("figcaption");
@@ -238,13 +242,47 @@ function liveDecorations(view: EditorView): DecorationSet {
 const livePreview: Extension = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
-    constructor(view: EditorView) { this.decorations = liveDecorations(view); }
+    constructor(view: EditorView) {
+      this.decorations = liveDecorations(view);
+      view.requestMeasure();
+    }
     update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) this.decorations = liveDecorations(update.view);
+      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        this.decorations = liveDecorations(update.view);
+        update.view.requestMeasure();
+      }
     }
   },
   { decorations: (plugin) => plugin.decorations },
 );
+
+function lineBiasedPosition(view: EditorView, event: MouseEvent) {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  const line = target?.closest<HTMLElement>(".cm-line");
+  if (!line || !view.contentDOM.contains(line) || target?.closest("a.cm-live-navigation")) return null;
+  const rect = line.getBoundingClientRect();
+  const lineHeight = Number.parseFloat(getComputedStyle(line).lineHeight) || rect.height;
+  if (!Number.isFinite(lineHeight) || lineHeight <= 0) return null;
+  const offsetY = Math.max(0, Math.min(event.clientY - rect.top, Math.max(0, rect.height - 1)));
+  const visualRow = Math.floor(offsetY / lineHeight);
+  const rowTop = rect.top + visualRow * lineHeight;
+  const rowBottom = Math.min(rect.bottom, rowTop + lineHeight);
+  const y = Math.min(rowTop + lineHeight * 0.25, rowBottom - 1);
+  return view.posAtCoords({ x: event.clientX, y });
+}
+
+const liveClickSelection: Extension = EditorView.mouseSelectionStyle.of((view, event) => {
+  if (event.button !== 0 || event.detail > 1 || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return null;
+  const anchor = lineBiasedPosition(view, event);
+  if (anchor === null) return null;
+  return {
+    get(curEvent) {
+      const head = lineBiasedPosition(view, curEvent) ?? anchor;
+      return EditorSelection.single(anchor, head);
+    },
+    update() { return false; },
+  };
+});
 
 const referenceNavigation = EditorView.domEventHandlers({
   mousedown(event) {
@@ -406,6 +444,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
         EditorView.contentAttributes.of({ spellcheck: "true" }),
         placeholder("What’s on your mind?"),
         livePreview,
+        liveClickSelection,
         referenceNavigation,
         Prec.high(editorEvents),
         EditorView.updateListener.of((update) => {
