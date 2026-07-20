@@ -7,6 +7,7 @@ import { markdownBody } from "@/lib/front-matter";
 import { discoverEntries } from "./discovery";
 import { entryPath } from "./paths";
 import { settings } from "./settings";
+import { indexEntryContent } from "./content-index";
 
 function excerpt(content: string, length: number) {
   return markdownBody(content)
@@ -51,6 +52,7 @@ export function saveEntry(date: string, content: string) {
   fs.writeFileSync(filePath, content.endsWith("\n") ? content : `${content}\n`, "utf8");
   const updatedAt = new Date().toISOString();
   db().insert(entries).values({ date, path: filePath, updatedAt }).onConflictDoUpdate({ target: entries.date, set: { path: filePath, updatedAt } }).run();
+  indexEntryContent(date, filePath, content);
   return { date, saved: true };
 }
 

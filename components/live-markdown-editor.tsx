@@ -9,6 +9,8 @@ import { openSearchPanel } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
 import { journalReferences } from "@/lib/markdown-references";
 import { exitEmptyMarkdownBlock, keepMobileCursorVisible } from "@/lib/editor/commands";
+import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
+import { AttachmentPicker } from "./attachments/attachment-picker";
 import { EditorToolbar } from "./editor/editor-toolbar";
 import { SuggestionMenu, type SuggestionMenuItem } from "./editor/suggestion-menu";
 import {
@@ -259,7 +261,9 @@ const referenceNavigation = EditorView.domEventHandlers({
 type LiveMarkdownEditorProps = {
   markdown: string;
   onChange: (markdown: string) => void;
-  onUpload: (file: File) => Promise<string | null>;
+  onUpload: (file: File) => Promise<AttachmentSummary | null>;
+  entryDate: string;
+  online: boolean;
   template: string;
   jumpToLine: number | null;
   onJumpHandled: () => void;
@@ -271,15 +275,13 @@ type LiveMarkdownEditorProps = {
 type ReferenceSuggestion = { name: string; count: number };
 type ReferenceQuery = { kind: "tag" | "person"; query: string; from: number; to: number };
 
-export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, template, jumpToLine, onJumpHandled, vimMode, tags, people }: LiveMarkdownEditorProps) {
+export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people }: LiveMarkdownEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const vimCompartment = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onUploadRef = useRef(onUpload);
   const externalUpdate = useRef(false);
-  const imageInput = useRef<HTMLInputElement>(null);
-  const attachmentInput = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuItemsRef = useRef<SuggestionMenuItem[]>([]);
   const menuIndexRef = useRef(0);
@@ -291,6 +293,8 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
   const [uploadError, setUploadError] = useState("");
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  const [pickerMode, setPickerMode] = useState<"all" | AttachmentKind | null>(null);
+  const [pickerPosition, setPickerPosition] = useState<number | null>(null);
   onChangeRef.current = onChange;
   onUploadRef.current = onUpload;
 
@@ -308,18 +312,25 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
     setUploading(true);
     setUploadError("");
     try {
-      const results = (await Promise.all(files.map((file) => onUploadRef.current(file)))).filter((result): result is string => Boolean(result));
+      const uploads = (await Promise.all(files.map((file) => onUploadRef.current(file)))).filter((result): result is AttachmentSummary => Boolean(result));
+      const results = uploads.map(attachmentMarkdown);
       if (results.length === 0) throw new Error("Upload failed");
-      const target = Math.min(position ?? view.state.selection.main.head, view.state.doc.length);
-      const before = target > 0 ? view.state.doc.sliceString(target - 1, target) : "";
-      const insert = `${before && before !== "\n" ? "\n" : ""}${results.join("\n")}\n`;
-      view.dispatch({ changes: { from: target, insert }, selection: { anchor: target + insert.length } });
-      view.focus();
+      insertMarkdown(results, position);
     } catch {
       setUploadError("Could not upload attachment");
     } finally {
       setUploading(false);
     }
+  }
+
+  function insertMarkdown(results: string[], position?: number) {
+    const view = editor.current;
+    if (!view || results.length === 0) return;
+    const target = Math.min(position ?? view.state.selection.main.head, view.state.doc.length);
+    const before = target > 0 ? view.state.doc.sliceString(target - 1, target) : "";
+    const insert = `${before && before !== "\n" ? "\n" : ""}${results.join("\n")}\n`;
+    view.dispatch({ changes: { from: target, insert }, selection: { anchor: target + insert.length } });
+    window.requestAnimationFrame(() => view.focus());
   }
 
   useEffect(() => {
@@ -562,8 +573,8 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
     { label: "Task", hint: "Markdown checkbox", run: () => runSlash("- [ ] ") },
     { label: "Quote", hint: "Block quote", run: () => runSlash("> ") },
     { label: "Code block", hint: "Fenced code", run: () => runSlash("```\n\n```", 4) },
-    { label: "Image", hint: "Upload an image", run: () => { clearSlash(); imageInput.current?.click(); } },
-    { label: "Attachment", hint: "Upload any file", run: () => { clearSlash(); attachmentInput.current?.click(); } },
+    { label: "Image", hint: "Upload or choose an image", run: () => { const position = clearSlash(); setPickerPosition(position); setPickerMode("image"); } },
+    { label: "Attachment", hint: "Upload or choose any file", run: () => { const position = clearSlash(); setPickerPosition(position); setPickerMode("all"); } },
     ...(template ? [{ label: "Template", hint: "Insert your entry template", run: () => runSlash(template) }] : []),
   ].filter((command) => slashQuery === null || command.label.toLowerCase().includes(slashQuery));
 
@@ -652,7 +663,6 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       <button type="button" aria-label="Link selection" onClick={() => setShowLinkInput(true)}>↗</button>
       <button type="button" aria-label="Code selection" onClick={() => wrap("`")}>{"<>"}</button>
     </div>}
-    <input ref={imageInput} className="editor-file-input" type="file" accept="image/*" onChange={(event) => { void insertUploads([...event.target.files || []]); event.target.value = ""; }} />
-    <input ref={attachmentInput} className="editor-file-input" type="file" onChange={(event) => { void insertUploads([...event.target.files || []]); event.target.value = ""; }} />
+    <AttachmentPicker open={pickerMode !== null} mode={pickerMode || "all"} entryDate={entryDate} online={online} onClose={() => setPickerMode(null)} onInsert={(markdown) => insertMarkdown(markdown, pickerPosition ?? undefined)} />
   </div>;
 }
