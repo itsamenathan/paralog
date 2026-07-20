@@ -27,6 +27,8 @@ import { useJournalReferences } from "./journal/use-journal-references";
 import { useRandomMemory } from "./journal/use-random-memory";
 import { useTheme } from "./journal/use-theme";
 import type { JournalSettings } from "./journal/types";
+import { AttachmentPicker } from "./attachments/attachment-picker";
+import type { AttachmentSummary } from "@/lib/attachment-types";
 
 const LiveMarkdownEditor = dynamic(() => import("./live-markdown-editor"), {
   ssr: false,
@@ -161,6 +163,7 @@ export default function Journal() {
   const [showSettings, setShowSettings] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showAllMemories, setShowAllMemories] = useState(false);
+  const [attachmentPicker, setAttachmentPicker] = useState<"all" | "image" | null>(null);
   const { dark, setDark } = useTheme();
   const [online, setOnline] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -174,7 +177,6 @@ export default function Journal() {
   const serverContentRef = useRef<string | null>(null);
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
-  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const autoLocationAttemptedRef = useRef(new Set<string>());
   selectedRef.current = selected;
   entryRef.current = entry;
@@ -274,6 +276,17 @@ export default function Journal() {
       return false;
     }
   }, [selected]);
+
+  const flushDirtyEntry = useCallback(() => {
+    if (!dirtyRef.current) return;
+    const current = entryRef.current;
+    void persistEntry(selectedRef.current, current.content, current);
+  }, [persistEntry]);
+
+  const openAttachments = useCallback(() => {
+    flushDirtyEntry();
+    window.location.assign("/attachments");
+  }, [flushDirtyEntry]);
 
   const loadEntry = useCallback(async (date: string, signal?: AbortSignal) => {
     setLoading(true);
@@ -610,24 +623,19 @@ export default function Journal() {
     choose(iso(date));
   }
 
-  async function uploadFile(file: File) {
+  async function uploadFile(file: File): Promise<AttachmentSummary | null> {
     if (!navigator.onLine) { setSaveState("offline"); return null; }
     const data = new FormData();
     data.append("file", file);
     const response = await fetch("/api/uploads", { method: "POST", body: data });
     if (!response.ok) return null;
-    const uploaded = await response.json();
-    const url = `/api/files?path=${encodeURIComponent(uploaded.path)}`;
-    const label = String(uploaded.name).replace(/([\\\[\]])/g, "\\$1");
-    return uploaded.type.startsWith("image/")
-      ? `![${label}](${url})`
-      : `[${label}](${url})`;
+    return response.json();
   }
 
-  async function upload(file: File) {
-    const markdown = await uploadFile(file);
-    if (!markdown) return;
-    changeContent(`${entry.content}${entry.content && !entry.content.endsWith("\n") ? "\n" : ""}${markdown}\n`);
+  function appendAttachments(markdown: string[]) {
+    if (!markdown.length) return;
+    const prefix = entry.content && !entry.content.endsWith("\n") ? "\n" : "";
+    changeContent(`${entry.content}${prefix}${markdown.join("\n")}\n`);
   }
 
   async function addLocation(automatic = false) {
@@ -770,6 +778,7 @@ export default function Journal() {
         <button className="today-button" type="button" onClick={() => choose(today)}><span>Today</span><b aria-hidden="true">↗</b></button>
         {navigationWidgets()}
         <div className="side-actions">
+          <button type="button" onClick={openAttachments}><span className="action-icon" aria-hidden="true">▧</span><span className="action-label">Attachments</span></button>
           <button type="button" onClick={() => setDark(!dark)}><span className="action-icon" aria-hidden="true">{dark ? "☀" : "◐"}</span><span className="action-label">{dark ? "Light mode" : "Dark mode"}</span></button>
           <button type="button" onClick={() => setShowSettings(true)}><span className="action-icon" aria-hidden="true">⚙</span><span className="action-label">Settings</span></button>
           <button type="button" onClick={signOut}><span className="action-icon" aria-hidden="true">↪</span><span className="action-label">Sign out</span></button>
@@ -781,6 +790,7 @@ export default function Journal() {
         <div>
           <button type="button" onClick={() => choose(today)} aria-label="Go to today">Today</button>
           <button type="button" onClick={() => setShowCalendar(true)} aria-label="Open calendar"><span aria-hidden="true">▦</span></button>
+          <button type="button" onClick={openAttachments} aria-label="Open attachments"><span aria-hidden="true">▧</span></button>
           <button type="button" onClick={() => setDark(!dark)} aria-label={dark ? "Use light mode" : "Use dark mode"}><span aria-hidden="true">{dark ? "☀" : "◐"}</span></button>
           <button type="button" onClick={() => setShowSettings(true)} aria-label="Open settings"><span aria-hidden="true">⚙</span></button>
         </div>
@@ -824,11 +834,10 @@ export default function Journal() {
             <button className={`tools-trigger ${showTools ? "active" : ""}`} type="button" aria-haspopup="menu" aria-expanded={showTools} onClick={() => setShowTools((value) => !value)}>Tools <span aria-hidden="true">⌄</span></button>
             {showTools && <div className="tools-menu" role="menu">
               <button type="button" role="menuitem" disabled={!online || locationState === "locating" || locationState === "looking-up"} onClick={() => { setShowTools(false); void addLocation(); }}><b>{locationState === "locating" ? "Locating…" : locationState === "looking-up" ? "Finding city…" : "Add location"}</b><small>Add city, state, and country to metadata</small></button>
-              <button type="button" role="menuitem" disabled={!online} onClick={() => attachmentInputRef.current?.click()}><b>Attach file</b><small>{online ? "Add a photo or document" : "Available when back online"}</small></button>
+              <button type="button" role="menuitem" onClick={() => { setShowTools(false); setAttachmentPicker("all"); }}><b>Add attachment</b><small>Upload a file or choose from your library</small></button>
               <button type="button" role="menuitem" disabled={outline.length === 0} onClick={() => { setShowOutline((value) => !value); setShowStats(false); setShowTools(false); }}><b>Outline</b><small>{outline.length ? `${outline.length} ${outline.length === 1 ? "heading" : "headings"}` : "No headings yet"}</small></button>
               <button type="button" role="menuitem" onClick={() => { setShowTools(false); openRevisions(); }}><b>Version history</b><small>Review and restore earlier saves</small></button>
             </div>}
-            <input ref={attachmentInputRef} className="editor-file-input" type="file" disabled={!online} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) { setShowTools(false); void upload(file); } }} />
           </div>
         </div>
         {showOutline && <nav className="editor-popover outline-panel" aria-label="Entry outline">
@@ -842,7 +851,7 @@ export default function Journal() {
           <button className="template-button" type="button" onClick={() => changeContent(entry.template)}>Start with your template →</button>
         )}
         <div className={`editor-frame ${loading ? "loading" : ""}`}>
-          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} />}
+          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} entryDate={selected} online={online} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} onBeforeAttachmentNavigation={flushDirtyEntry} />}
         </div>
         </div>
         <aside className="entry-context-column" aria-label="Daily activity and archive memories">
@@ -876,6 +885,8 @@ export default function Journal() {
         onClose={() => setShowRevisions(false)}
         onRestore={restoreRevision}
       />}
+
+      <AttachmentPicker open={attachmentPicker !== null} mode={attachmentPicker || "all"} entryDate={selected} online={online} onClose={() => setAttachmentPicker(null)} onInsert={appendAttachments} onBeforeNavigate={flushDirtyEntry} />
 
       {openPhoto && <PhotoLightbox
         photo={openPhoto}

@@ -9,7 +9,11 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 const migrationsFolder = path.resolve(import.meta.dirname, "..", "drizzle");
 const applicationTables = [
+  "attachment_references",
+  "attachments",
   "entries",
+  "entry_content_scans",
+  "journal_references",
   "notification_config",
   "notification_deliveries",
   "notification_suppressions",
@@ -33,10 +37,11 @@ test("migrations initialize a fresh database and are repeatable", () => {
   try {
     migrate(fixture.database, { migrationsFolder });
     for (const table of applicationTables) assert.ok(tableNames(fixture.sqlite).includes(table), `missing ${table}`);
-    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, 1);
+    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, 2);
+    assert.equal(tableNames(fixture.sqlite).includes("attachment_entry_scans"), false);
 
     migrate(fixture.database, { migrationsFolder });
-    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, 1);
+    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, 2);
   } finally {
     fixture.sqlite.close();
     fs.rmSync(fixture.directory, { recursive: true, force: true });
@@ -72,7 +77,8 @@ test("the baseline adopts a legacy database without losing data", () => {
     assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM push_subscriptions").get().count, 1);
     assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM notification_deliveries").get().count, 1);
     assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM notification_suppressions").get().count, 1);
-    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, 1);
+    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, 2);
+    assert.equal(tableNames(fixture.sqlite).includes("attachment_entry_scans"), false);
   } finally {
     fixture.sqlite.close();
     fs.rmSync(fixture.directory, { recursive: true, force: true });

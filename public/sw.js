@@ -1,5 +1,5 @@
-const SHELL_CACHE = "paralog-shell-v5";
-const RUNTIME_CACHE = "paralog-runtime-v5";
+const SHELL_CACHE = "paralog-shell-v6";
+const RUNTIME_CACHE = "paralog-runtime-v6";
 const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/notification-badge.png"];
 
 self.addEventListener("install", (event) => {
@@ -97,7 +97,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.startsWith("/api/entries") || url.pathname.startsWith("/api/calendar") || url.pathname.startsWith("/api/settings") || url.pathname.startsWith("/api/tags") || url.pathname.startsWith("/api/people") || url.pathname.startsWith("/api/references") || url.pathname.startsWith("/api/activity") || url.pathname.startsWith("/api/random-memory") || url.pathname.startsWith("/api/files")) {
+  if (url.pathname.startsWith("/api/entries") || url.pathname.startsWith("/api/calendar") || url.pathname.startsWith("/api/settings") || url.pathname.startsWith("/api/tags") || url.pathname.startsWith("/api/people") || url.pathname.startsWith("/api/references") || url.pathname.startsWith("/api/activity") || url.pathname.startsWith("/api/random-memory") || url.pathname.startsWith("/api/files") || url.pathname.startsWith("/api/attachments") || url.pathname.startsWith("/attachments/")) {
     event.respondWith(networkFirst(request));
     return;
   }

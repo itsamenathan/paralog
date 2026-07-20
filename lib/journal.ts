@@ -6,3 +6,4 @@ export { entriesMentioning, entriesTagged, people, references, tags } from "@/li
 export { revisionForDate, revisionsForDate } from "@/lib/journal/revisions";
 export { settings, updateSettings } from "@/lib/journal/settings";
 export { saveUpload, uploadPath } from "@/lib/journal/uploads";
+export { deleteAttachment, listAttachments } from "@/lib/journal/attachments";

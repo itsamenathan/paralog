@@ -10,6 +10,77 @@ import { calculateWritingStats, searchJournalDocuments, selectRandomMemory } fro
 import { journalReferences } from "../lib/markdown-references.ts";
 import { localClock, notificationDue } from "../lib/notifications/clock.ts";
 import { cleanSchedule, validTimezone } from "../lib/notifications/validation.ts";
+import { attachmentPathFromUrl, attachmentReferencesInMarkdown, normalizeAttachmentPath } from "../lib/attachment-references.ts";
+import { entryNeedsContentIndex } from "../lib/content-index-state.ts";
+import { indexedJournalReferences } from "../lib/entry-journal-references.ts";
+
+test("attachment paths accept supported URLs and reject unsafe destinations", () => {
+  assert.equal(attachmentPathFromUrl("/api/files?path=attachments%2F2026%2F07%2Fphoto.png"), "attachments/2026/07/photo.png");
+  assert.equal(attachmentPathFromUrl("/attachments/2026/07/photo.png"), "attachments/2026/07/photo.png");
+  assert.equal(attachmentPathFromUrl("attachments/2026/07/photo.png"), "attachments/2026/07/photo.png");
+  for (const value of ["../attachments/photo.png", "attachments/../journal.db", "attachments/.cache/thumb.webp", "/attachments/photo.png", "attachments\\photo.png"]) {
+    assert.equal(normalizeAttachmentPath(value), null);
+  }
+  assert.equal(attachmentPathFromUrl("https://example.com/attachments/photo.png"), null);
+  assert.equal(attachmentPathFromUrl("/api/files?path=..%2Fjournal.db"), null);
+});
+
+test("attachment references count Markdown links while ignoring code", () => {
+  const references = attachmentReferencesInMarkdown([
+    "![Photo](/api/files?path=attachments%2F2026%2F07%2Fphoto.png)",
+    "[Photo again](attachments/2026/07/photo.png)",
+    "[notes]: /attachments/2026/07/notes.pdf",
+    "`[ignored](attachments/secret.txt)`",
+    "```md",
+    "[ignored](attachments/also-secret.txt)",
+    "```",
+  ].join("\n"));
+  assert.equal(references.get("attachments/2026/07/photo.png"), 2);
+  assert.equal(references.get("attachments/2026/07/notes.pdf"), 1);
+  assert.equal(references.size, 2);
+});
+
+test("journal reference indexing normalizes names and counts occurrences", () => {
+  assert.deepEqual(indexedJournalReferences("Met @Nathan and @nathan about #Paralog, then #paralog again."), [
+    { kind: "person", normalizedName: "nathan", displayName: "Nathan", occurrences: 2 },
+    { kind: "tag", normalizedName: "paralog", displayName: "Paralog", occurrences: 2 },
+  ]);
+});
+
+test("journal reference indexing ignores metadata, code, links, URLs, and HTML", () => {
+  const references = indexedJournalReferences([
+    "---",
+    "topic: \"#metadata\"",
+    "---",
+    "Keep #visible and @person.",
+    "`#inline-code`",
+    "```md",
+    "#fenced-code",
+    "```",
+    "[#link-label](https://example.com/@link)",
+    "[#reference-label][reference]",
+    "[reference]: https://example.com/#definition",
+    "https://example.com/#url",
+    "<!-- #comment -->",
+    "<span>#html</span>",
+  ].join("\n"));
+  assert.deepEqual(references, [
+    { kind: "tag", normalizedName: "visible", displayName: "visible", occurrences: 1 },
+    { kind: "person", normalizedName: "person", displayName: "person", occurrences: 1 },
+  ]);
+});
+
+test("content index state changes for path, timestamp, size, and parser version", () => {
+  const file = { entryPath: "/data/2026-07-20.md", entryUpdatedAt: "2026-07-20T12:00:00.000Z", entrySize: 120 };
+  const scan = { ...file, indexVersion: 1 };
+  assert.equal(entryNeedsContentIndex(undefined, file, 1), true);
+  assert.equal(entryNeedsContentIndex(scan, file, 1), false);
+  assert.equal(entryNeedsContentIndex(scan, file, 1, true), true);
+  assert.equal(entryNeedsContentIndex({ ...scan, entryPath: "/old.md" }, file, 1), true);
+  assert.equal(entryNeedsContentIndex({ ...scan, entryUpdatedAt: "older" }, file, 1), true);
+  assert.equal(entryNeedsContentIndex({ ...scan, entrySize: 119 }, file, 1), true);
+  assert.equal(entryNeedsContentIndex(scan, file, 2), true);
+});
 
 test("renders every supported journal path token", () => {
   assert.equal(

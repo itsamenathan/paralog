@@ -1,10 +1,13 @@
 import { NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { attachmentFileResponse } from "@/lib/journal/attachment-response";
+
 export const runtime = "nodejs";
-async function respond(request: NextRequest) {
+
+async function respond(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   if (!await isAuthenticated()) return new Response("Unauthorized", { status: 401 });
-  return attachmentFileResponse(request, request.nextUrl.searchParams.get("path") || "");
+  const segments = (await context.params).path;
+  return attachmentFileResponse(request, `attachments/${segments.join("/")}`);
 }
 
 export const GET = respond;
