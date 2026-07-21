@@ -57,6 +57,28 @@ class BulletWidget extends WidgetType {
   }
 }
 
+class TaskCheckboxWidget extends WidgetType {
+  constructor(private checked: boolean, private checkboxPosition: number) { super(); }
+  eq(widget: TaskCheckboxWidget) {
+    return widget.checked === this.checked && widget.checkboxPosition === this.checkboxPosition;
+  }
+  toDOM(view: EditorView) {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "cm-live-task-checkbox";
+    checkbox.checked = this.checked;
+    checkbox.tabIndex = -1;
+    checkbox.setAttribute("aria-label", this.checked ? "Mark task incomplete" : "Mark task complete");
+    checkbox.addEventListener("mousedown", (event) => event.preventDefault());
+    checkbox.addEventListener("click", (event) => {
+      event.preventDefault();
+      view.dispatch({ changes: { from: this.checkboxPosition, to: this.checkboxPosition + 1, insert: this.checked ? " " : "x" } });
+      view.focus();
+    });
+    return checkbox;
+  }
+}
+
 function liveDecorations(view: EditorView): { decorations: DecorationSet; atomic: DecorationSet } {
   const decorations: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
@@ -145,12 +167,22 @@ function liveDecorations(view: EditorView): { decorations: DecorationSet; atomic
         if (!active) hide(line.from, line.from + quote[0].length);
       }
 
-      const bullet = text.match(/^(\s*)[-+*]\s+/);
-      if (bullet && !active) {
-        const markerFrom = line.from + bullet[1].length;
-        const replacement = Decoration.replace({ widget: new BulletWidget() }).range(markerFrom, line.from + bullet[0].length);
+      const task = text.match(/^(\s*)[-+*]\s+\[([ xX])\]\s+/);
+      if (task && !active) {
+        const markerFrom = line.from + task[1].length;
+        const checkboxPosition = markerFrom + task[0].indexOf("[") + 1;
+        const replacement = Decoration.replace({ widget: new TaskCheckboxWidget(task[2].toLowerCase() === "x", checkboxPosition) })
+          .range(markerFrom, line.from + task[0].length);
         decorations.push(replacement);
         atomic.push(replacement);
+      } else {
+        const bullet = text.match(/^(\s*)[-+*]\s+/);
+        if (bullet && !active) {
+          const markerFrom = line.from + bullet[1].length;
+          const replacement = Decoration.replace({ widget: new BulletWidget() }).range(markerFrom, line.from + bullet[0].length);
+          decorations.push(replacement);
+          atomic.push(replacement);
+        }
       }
 
       const images = /!\[([^\]]*)\]\(([^)]+)\)/g;

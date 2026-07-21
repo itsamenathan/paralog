@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { remarkJournalReferences } from "@/lib/markdown-references";
 import { journalWordCount, markdownBody, setLocationFrontMatter } from "@/lib/front-matter";
 import { entryMap, mergeCalendarEntries, type CalendarEntry } from "@/lib/calendar-entries";
@@ -768,7 +769,7 @@ export default function Journal() {
     />
   );
   const rendered = (
-    <article className="preview"><ReactMarkdown remarkPlugins={[remarkJournalReferences]}>{markdownBody(entry.content) || "*Nothing here yet.*"}</ReactMarkdown></article>
+    <article className="preview"><ReactMarkdown remarkPlugins={[remarkGfm, remarkJournalReferences]}>{markdownBody(entry.content) || "*Nothing here yet.*"}</ReactMarkdown></article>
   );
 
   return (
