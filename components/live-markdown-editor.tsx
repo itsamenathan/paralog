@@ -8,7 +8,7 @@ import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
 import { journalReferences } from "@/lib/markdown-references";
-import { exitEmptyMarkdownBlock, keepMobileCursorVisible } from "@/lib/editor/commands";
+import { exitEmptyMarkdownBlock, keepMobileCursorVisible, moveLivePreviewVertically } from "@/lib/editor/commands";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
 import { AttachmentPicker } from "./attachments/attachment-picker";
 import { EditorToolbar } from "./editor/editor-toolbar";
@@ -57,8 +57,9 @@ class BulletWidget extends WidgetType {
   }
 }
 
-function liveDecorations(view: EditorView): DecorationSet {
+function liveDecorations(view: EditorView): { decorations: DecorationSet; atomic: DecorationSet } {
   const decorations: Range<Decoration>[] = [];
+  const atomic: Range<Decoration>[] = [];
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
   let metadataEndLine = 0;
   if (view.state.doc.line(1).text.trim() === "---") {
@@ -86,7 +87,11 @@ function liveDecorations(view: EditorView): DecorationSet {
     if (to > from) decorations.push(Decoration.mark({ class: className }).range(from, to));
   };
   const hide = (from: number, to: number) => {
-    if (to > from) decorations.push(Decoration.replace({}).range(from, to));
+    if (to > from) {
+      const replacement = Decoration.replace({}).range(from, to);
+      decorations.push(replacement);
+      atomic.push(replacement);
+    }
   };
 
   for (const { from, to } of view.visibleRanges) {
@@ -143,16 +148,18 @@ function liveDecorations(view: EditorView): DecorationSet {
       const bullet = text.match(/^(\s*)[-+*]\s+/);
       if (bullet && !active) {
         const markerFrom = line.from + bullet[1].length;
-        decorations.push(Decoration.replace({ widget: new BulletWidget() }).range(markerFrom, line.from + bullet[0].length));
+        const replacement = Decoration.replace({ widget: new BulletWidget() }).range(markerFrom, line.from + bullet[0].length);
+        decorations.push(replacement);
+        atomic.push(replacement);
       }
 
       const images = /!\[([^\]]*)\]\(([^)]+)\)/g;
       for (let match = images.exec(text); match; match = images.exec(text)) {
         if (!active) {
-          decorations.push(
-            Decoration.replace({ widget: new ImageWidget(match[2], match[1]) })
-              .range(line.from + match.index, line.from + match.index + match[0].length),
-          );
+          const replacement = Decoration.replace({ widget: new ImageWidget(match[2], match[1]) })
+            .range(line.from + match.index, line.from + match.index + match[0].length);
+          decorations.push(replacement);
+          atomic.push(replacement);
         }
       }
 
@@ -236,25 +243,31 @@ function liveDecorations(view: EditorView): DecorationSet {
       position = line.to + 1;
     }
   }
-  return Decoration.set(decorations, true);
+  return { decorations: Decoration.set(decorations, true), atomic: Decoration.set(atomic, true) };
 }
 
-const livePreview: Extension = ViewPlugin.fromClass(
+const livePreviewPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    atomic: DecorationSet;
     constructor(view: EditorView) {
-      this.decorations = liveDecorations(view);
+      ({ decorations: this.decorations, atomic: this.atomic } = liveDecorations(view));
       view.requestMeasure();
     }
     update(update: ViewUpdate) {
       if (update.docChanged || update.selectionSet || update.viewportChanged) {
-        this.decorations = liveDecorations(update.view);
+        ({ decorations: this.decorations, atomic: this.atomic } = liveDecorations(update.view));
         update.view.requestMeasure();
       }
     }
   },
   { decorations: (plugin) => plugin.decorations },
 );
+
+const livePreview: Extension = [
+  livePreviewPlugin,
+  EditorView.atomicRanges.of((view) => view.plugin(livePreviewPlugin)?.atomic ?? Decoration.none),
+];
 
 function lineBiasedPosition(view: EditorView, event: MouseEvent) {
   const target = event.target instanceof HTMLElement ? event.target : null;
@@ -439,7 +452,13 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
         vimCompartment.current.of([]),
         basicSetup,
         markdown(),
-        Prec.high(keymap.of([{ key: "Enter", run: exitEmptyMarkdownBlock }, { key: "Tab", run: indentMore }, { key: "Shift-Tab", run: indentLess }])),
+        Prec.high(keymap.of([
+          { key: "Enter", run: exitEmptyMarkdownBlock },
+          { key: "ArrowUp", run: (view) => moveLivePreviewVertically(view, -1), shift: (view) => moveLivePreviewVertically(view, -1, true) },
+          { key: "ArrowDown", run: (view) => moveLivePreviewVertically(view, 1), shift: (view) => moveLivePreviewVertically(view, 1, true) },
+          { key: "Tab", run: indentMore },
+          { key: "Shift-Tab", run: indentLess },
+        ])),
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: "true" }),
         placeholder("What’s on your mind?"),

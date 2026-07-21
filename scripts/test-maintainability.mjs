@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 import { entryMap, mergeCalendarEntries } from "../lib/calendar-entries.ts";
-import { exitEmptyMarkdownBlock } from "../lib/editor/commands.ts";
+import { exitEmptyMarkdownBlock, moveLivePreviewVertically } from "../lib/editor/commands.ts";
 import { journalWordCount, markdownBody, setLocationFrontMatter } from "../lib/front-matter.ts";
 import { renderEntryPath, resolveEntryPath, validateSaveFormat } from "../lib/journal/path-format.ts";
 import { revisionChanges } from "../lib/journal/revision-diff.ts";
@@ -306,4 +306,70 @@ test("pressing Enter preserves non-empty Markdown blocks", () => {
   let dispatched = false;
   assert.equal(exitEmptyMarkdownBlock({ state: editorState("- keep writing"), dispatch: () => { dispatched = true; } }), false);
   assert.equal(dispatched, false);
+});
+
+function verticalNavigationView(text, head, movedHead, coordinateHead) {
+  const rawLines = text.split("\n");
+  const lines = [];
+  let from = 0;
+  for (let index = 0; index < rawLines.length; index += 1) {
+    const value = rawLines[index];
+    lines.push({ number: index + 1, from, to: from + value.length, text: value });
+    from += value.length + 1;
+  }
+  const lineAt = (position) => lines.find((line) => position >= line.from && position <= line.to) || lines.at(-1);
+  let transaction;
+  let measurement;
+  return {
+    state: {
+      selection: { main: { empty: true, anchor: head, head }, ranges: [{}] },
+      doc: { lines: lines.length, lineAt, line: (number) => lines[number - 1] },
+    },
+    moveVertically: () => ({ anchor: movedHead, head: movedHead }),
+    moveToLineBoundary: () => ({ anchor: movedHead, head: movedHead }),
+    coordsAtPos: (position) => ({ top: lineAt(position).number * 20, left: 80 }),
+    lineBlockAt: (position) => ({ top: (lineAt(position).number - 1) * 20, height: 20 }),
+    posAtCoords: () => coordinateHead,
+    contentDOM: { getBoundingClientRect: () => ({ left: 0 }) },
+    documentTop: 0,
+    dispatch: (value) => { transaction = value; },
+    requestMeasure: (value) => { measurement = value; },
+    transaction: () => transaction,
+    measurement: () => measurement,
+  };
+}
+
+test("Live Preview vertical movement cannot skip an adjacent Markdown line", () => {
+  for (const text of [
+    "## Heading\nbody\n## Destination",
+    "- first\n- second\n- third",
+    "1. first\n2. second\n3. third",
+    "> first\n> second\n> third",
+    "**first**\n**second**\n**third**",
+    "[first](https://example.com/a-long-url)\nmiddle\n[last](https://example.com/another-long-url)",
+  ]) {
+    const lines = text.split("\n");
+    const second = lines[0].length + 1;
+    const third = second + lines[1].length + 1;
+    const view = verticalNavigationView(text, third + 2, 2, second + 2);
+    assert.equal(moveLivePreviewVertically(view, -1), true);
+    assert.deepEqual(view.transaction(), { selection: { anchor: second + 2 } });
+  }
+});
+
+test("Live Preview schedules viewport stabilization when an image changes height", () => {
+  const text = "before\n![photo](/attachments/photo.jpg)\nafter";
+  const second = text.indexOf("![photo]");
+  const view = verticalNavigationView(text, 2, second + 2, second + 2);
+  assert.equal(moveLivePreviewVertically(view, 1), true);
+  assert.equal(typeof view.measurement()?.read, "function");
+  assert.equal(typeof view.measurement()?.write, "function");
+});
+
+test("Live Preview vertical movement retains CodeMirror movement within wrapped rows", () => {
+  const text = "first\na long wrapped middle line\nlast";
+  const second = text.indexOf("a long");
+  const view = verticalNavigationView(text, second + 20, second + 8, second);
+  assert.equal(moveLivePreviewVertically(view, -1), true);
+  assert.deepEqual(view.transaction(), { selection: { anchor: second + 8 } });
 });
