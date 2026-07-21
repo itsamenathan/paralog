@@ -6,9 +6,9 @@ import { markdown } from "@codemirror/lang-markdown";
 import { Compartment, EditorSelection, EditorState, Prec, type Extension, type Range } from "@codemirror/state";
 import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
-import { vim } from "@replit/codemirror-vim";
+import { Vim, vim } from "@replit/codemirror-vim";
 import { journalReferences } from "@/lib/markdown-references";
-import { exitEmptyMarkdownBlock, keepMobileCursorVisible, moveLivePreviewVertically } from "@/lib/editor/commands";
+import { exitEmptyMarkdownBlock, keepMobileCursorVisible, livePreviewVerticalTarget, moveLivePreviewVertically } from "@/lib/editor/commands";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
 import { AttachmentPicker } from "./attachments/attachment-picker";
 import { EditorToolbar } from "./editor/editor-toolbar";
@@ -268,6 +268,33 @@ const livePreview: Extension = [
   livePreviewPlugin,
   EditorView.atomicRanges.of((view) => view.plugin(livePreviewPlugin)?.atomic ?? Decoration.none),
 ];
+
+let vimNavigationConfigured = false;
+function configureLivePreviewVimNavigation() {
+  if (vimNavigationConfigured) return;
+  vimNavigationConfigured = true;
+
+  Vim.defineMotion("paralogMoveByLines", (cm, head, args) => {
+    const line = Math.max(cm.firstLine(), Math.min(cm.lastLine(), head.line + (args.forward ? args.repeat : -args.repeat)));
+    return cm.clipPos({ line, ch: head.ch });
+  });
+  Vim.defineMotion("paralogMoveByDisplayLines", (cm, head, args) => {
+    let range = EditorSelection.cursor(cm.indexFromPos(head));
+    for (let count = 0; count < args.repeat; count += 1) {
+      const target = livePreviewVerticalTarget(cm.cm6, range, args.forward ? 1 : -1);
+      if (target.head === range.head) break;
+      range = EditorSelection.cursor(target.head, 1, undefined, range.goalColumn);
+    }
+    return cm.posFromIndex(range.head);
+  });
+  for (const [keys, motion, forward] of [
+    ["j", "paralogMoveByLines", true],
+    ["k", "paralogMoveByLines", false],
+    ["gj", "paralogMoveByDisplayLines", true],
+    ["gk", "paralogMoveByDisplayLines", false],
+  ] as const) Vim.mapCommand(keys, "motion", motion, { forward }, {});
+}
+configureLivePreviewVimNavigation();
 
 function lineBiasedPosition(view: EditorView, event: MouseEvent) {
   const target = event.target instanceof HTMLElement ? event.target : null;

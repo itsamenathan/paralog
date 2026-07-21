@@ -1,4 +1,4 @@
-import type { EditorState } from "@codemirror/state";
+import type { EditorState, SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 const imageMarkdown = /!\[[^\]]*\]\([^)]+\)/;
@@ -17,10 +17,7 @@ function stabilizeImageReflow(view: EditorView, position: number, expectedTop: n
   });
 }
 
-export function moveLivePreviewVertically(view: EditorView, direction: -1 | 1, extend = false) {
-  const selection = view.state.selection.main;
-  if (view.state.selection.ranges.length !== 1 || (!extend && !selection.empty)) return false;
-
+export function livePreviewVerticalTarget(view: EditorView, selection: SelectionRange, direction: -1 | 1) {
   const line = view.state.doc.lineAt(selection.head);
   let moved = view.moveVertically(selection, direction > 0);
   if (moved.head === selection.head) moved = view.moveToLineBoundary(selection, direction > 0);
@@ -45,7 +42,13 @@ export function moveLivePreviewVertically(view: EditorView, direction: -1 | 1, e
   }
 
   const targetLine = view.state.doc.lineAt(head);
-  const imageReflow = imageMarkdown.test(line.text) || imageMarkdown.test(targetLine.text);
+  return { head, expectedTop, imageReflow: imageMarkdown.test(line.text) || imageMarkdown.test(targetLine.text) };
+}
+
+export function moveLivePreviewVertically(view: EditorView, direction: -1 | 1, extend = false) {
+  const selection = view.state.selection.main;
+  if (view.state.selection.ranges.length !== 1 || (!extend && !selection.empty)) return false;
+  const { head, expectedTop, imageReflow } = livePreviewVerticalTarget(view, selection, direction);
   view.dispatch({ selection: extend ? { anchor: selection.anchor, head } : { anchor: head } });
   if (imageReflow) stabilizeImageReflow(view, head, expectedTop);
   return true;
