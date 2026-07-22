@@ -514,6 +514,15 @@ export default function Journal() {
     return () => controller.abort();
   }, [loadEntry, selected]);
 
+  useEffect(() => {
+    if (locationState !== "added") return;
+    const timer = window.setTimeout(() => {
+      setLocationState("idle");
+      setLocationMessage("");
+    }, 4_000);
+    return () => window.clearTimeout(timer);
+  }, [locationState]);
+
   useEffect(() => { setOpenPhoto(null); }, [selected]);
 
   useEffect(() => {

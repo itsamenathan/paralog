@@ -82,7 +82,8 @@ class TaskCheckboxWidget extends WidgetType {
 function liveDecorations(view: EditorView): { decorations: DecorationSet; atomic: DecorationSet } {
   const decorations: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
-  const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+  const selection = view.state.selection.main;
+  const activeLine = view.state.doc.lineAt(selection.head).number;
   let metadataEndLine = 0;
   if (view.state.doc.line(1).text.trim() === "---") {
     for (let lineNumber = 2; lineNumber <= view.state.doc.lines; lineNumber += 1) {
@@ -92,6 +93,7 @@ function liveDecorations(view: EditorView): { decorations: DecorationSet; atomic
       }
     }
   }
+  const metadataEditing = Boolean(metadataEndLine && activeLine <= metadataEndLine && (view.hasFocus || !selection.empty));
   const fencedLines = new Set<number>();
   let fence: { character: string; length: number } | null = null;
   for (let lineNumber = 1; lineNumber <= view.state.doc.lines; lineNumber += 1) {
@@ -124,23 +126,31 @@ function liveDecorations(view: EditorView): { decorations: DecorationSet; atomic
       const active = line.number === activeLine;
 
       if (metadataEndLine && line.number <= metadataEndLine) {
+        const field = line.number !== 1 && line.number !== metadataEndLine
+          ? text.match(/^(\s*)([\w-]+)(\s*:)(.*)$/)
+          : null;
+        const rootField = field && field[1].length === 0 ? field : null;
         const positionClass = line.number === 1
           ? " cm-live-metadata-start"
           : line.number === metadataEndLine
             ? " cm-live-metadata-end"
             : "";
-        decorations.push(Decoration.line({ class: `cm-live-metadata${positionClass}` }).range(line.from));
+        const propertyName = rootField?.[2]?.toLocaleLowerCase().replace(/[^a-z0-9-]/g, "") ?? "";
+        const fieldClass = !metadataEditing && rootField
+          ? ` cm-live-metadata-field${propertyName ? ` cm-live-metadata-property-${propertyName}` : ""}`
+          : "";
+        const modeClass = metadataEditing ? " cm-live-metadata-editing" : " cm-live-metadata-preview";
+        decorations.push(Decoration.line({ class: `cm-live-metadata${modeClass}${positionClass}${fieldClass}` }).range(line.from));
 
         if (line.number === 1 || line.number === metadataEndLine) {
-          addMark(line.from, line.to, "cm-live-metadata-delimiter");
-        } else {
-          const field = text.match(/^(\s*)([\w-]+)(\s*:)(.*)$/);
-          if (field) {
-            const keyFrom = line.from + field[1].length;
-            const separatorEnd = keyFrom + field[2].length + field[3].length;
-            addMark(keyFrom, keyFrom + field[2].length, "cm-live-metadata-key");
-            addMark(separatorEnd, line.to, "cm-live-metadata-value");
-          }
+          addMark(line.from, line.to, `cm-live-metadata-delimiter cm-live-metadata-delimiter-${metadataEditing ? "editing" : "preview"}`);
+        } else if (field) {
+          const keyFrom = line.from + field[1].length;
+          const separatorFrom = keyFrom + field[2].length;
+          const separatorEnd = separatorFrom + field[3].length;
+          addMark(keyFrom, separatorFrom, "cm-live-metadata-key");
+          addMark(separatorFrom, separatorEnd, "cm-live-metadata-separator");
+          addMark(separatorEnd, line.to, "cm-live-metadata-value");
         }
 
         if (line.to >= to) break;
@@ -287,7 +297,7 @@ const livePreviewPlugin = ViewPlugin.fromClass(
       view.requestMeasure();
     }
     update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      if (update.docChanged || update.selectionSet || update.viewportChanged || update.focusChanged) {
         ({ decorations: this.decorations, atomic: this.atomic } = liveDecorations(update.view));
         update.view.requestMeasure();
       }
@@ -331,7 +341,10 @@ configureLivePreviewVimNavigation();
 function lineBiasedPosition(view: EditorView, event: MouseEvent) {
   const target = event.target instanceof HTMLElement ? event.target : null;
   const line = target?.closest<HTMLElement>(".cm-line");
-  if (!line || !view.contentDOM.contains(line) || target?.closest("a.cm-live-navigation")) return null;
+  // Front matter switches from a property preview to raw YAML on focus. Let
+  // CodeMirror own its native mouse selection there so dragging can continue
+  // across the DOM change without this Live Preview position bias interfering.
+  if (!line || line.classList.contains("cm-live-metadata") || !view.contentDOM.contains(line) || target?.closest("a.cm-live-navigation")) return null;
   const rect = line.getBoundingClientRect();
   const lineHeight = Number.parseFloat(getComputedStyle(line).lineHeight) || rect.height;
   if (!Number.isFinite(lineHeight) || lineHeight <= 0) return null;
@@ -449,24 +462,25 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
     const editorEvents = EditorView.domEventHandlers({
       keydown(event) {
         const items = menuItemsRef.current;
-        if (items.length === 0) return false;
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          event.preventDefault();
-          const offset = event.key === "ArrowDown" ? 1 : -1;
-          selectMenuIndex((menuIndexRef.current + offset + items.length) % items.length);
-          return true;
-        }
-        if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey)) {
-          event.preventDefault();
-          items[Math.min(menuIndexRef.current, items.length - 1)].run();
-          return true;
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          menuItemsRef.current = [];
-          setSlashQuery(null);
-          setReferenceQuery(null);
-          return true;
+        if (items.length > 0) {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const offset = event.key === "ArrowDown" ? 1 : -1;
+            selectMenuIndex((menuIndexRef.current + offset + items.length) % items.length);
+            return true;
+          }
+          if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey)) {
+            event.preventDefault();
+            items[Math.min(menuIndexRef.current, items.length - 1)].run();
+            return true;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            menuItemsRef.current = [];
+            setSlashQuery(null);
+            setReferenceQuery(null);
+            return true;
+          }
         }
         return false;
       },

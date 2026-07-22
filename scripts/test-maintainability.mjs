@@ -114,9 +114,11 @@ test("word counts exclude YAML front matter", () => {
 
 test("location metadata is added and updated without replacing journal content", () => {
   const created = setLocationFrontMatter("A journal entry", "Portland, Oregon, United States");
-  assert.match(created, /^---\nlocation: "Portland, Oregon, United States"\n---\n\nA journal entry$/);
+  assert.match(created, /^---\nlocation: Portland, Oregon, United States\n---\n\nA journal entry$/);
   const updated = setLocationFrontMatter("---\ntitle: Today\nlocation: old\n  nested: value\n---\nBody", "Seattle, Washington");
-  assert.equal(updated, "---\ntitle: Today\nlocation: \"Seattle, Washington\"\n---\nBody");
+  assert.equal(updated, "---\ntitle: Today\nlocation: Seattle, Washington\n---\nBody");
+  const specialCharacters = setLocationFrontMatter("", "Example: East #1");
+  assert.match(specialCharacters, /^---\nlocation: "Example: East #1"\n---\n\n$/);
   assert.throws(() => setLocationFrontMatter("---\nlocation: unfinished", "Anywhere"), /unclosed YAML/);
 });
 
