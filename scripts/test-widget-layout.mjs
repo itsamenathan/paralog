@@ -7,6 +7,12 @@ import {
   normalizeWidgetLayout,
   resolveWidgetLayoutUpdate,
 } from "../lib/widget-layout.ts";
+import { selectImmichWidgetPhotos } from "../lib/immich-photo-selection.ts";
+import {
+  DEFAULT_WIDGET_SETTINGS,
+  normalizeWidgetSettings,
+  resolveWidgetSettingsUpdate,
+} from "../lib/widget-settings.ts";
 
 test("uses the complete default widget layout", () => {
   assert.deepEqual(normalizeWidgetLayout(undefined), DEFAULT_WIDGET_LAYOUT);
@@ -106,4 +112,71 @@ test("prefers a changed canonical layout over stale mirrored legacy fields", () 
     context: ["github", "archive", "immich", "random"],
     hidden: ["people"],
   });
+});
+
+test("uses complete default widget settings when none are stored", () => {
+  assert.deepEqual(normalizeWidgetSettings(undefined), DEFAULT_WIDGET_SETTINGS);
+});
+
+test("normalizes valid widget settings and removes unknown values", () => {
+  assert.deepEqual(normalizeWidgetSettings({
+    immich: { randomize: false, photoLimit: 12, unknown: true },
+    unknown: { enabled: true },
+  }), {
+    immich: { randomize: false, photoLimit: 12 },
+  });
+});
+
+test("clamps integer photo limits and defaults malformed values", () => {
+  assert.equal(normalizeWidgetSettings({ immich: { photoLimit: -2 } }).immich.photoLimit, 1);
+  assert.equal(normalizeWidgetSettings({ immich: { photoLimit: 99 } }).immich.photoLimit, 24);
+  for (const photoLimit of [2.5, "12", null, Number.NaN]) {
+    assert.equal(normalizeWidgetSettings({ immich: { photoLimit } }).immich.photoLimit, 6);
+  }
+  assert.equal(normalizeWidgetSettings({ immich: { randomize: "false" } }).immich.randomize, true);
+});
+
+test("preserves current widget settings when an older client omits them", () => {
+  const current = { immich: { randomize: false, photoLimit: 18 } };
+  assert.equal(resolveWidgetSettingsUpdate(current, undefined), current);
+  assert.deepEqual(resolveWidgetSettingsUpdate(current, {
+    immich: { randomize: true, photoLimit: 9 },
+  }), {
+    immich: { randomize: true, photoLimit: 9 },
+  });
+});
+
+const photos = Array.from({ length: 10 }, (_, index) => ({
+  id: `photo-${index}`,
+  width: 640,
+  height: 480,
+  capturedAt: `2026-07-24T${String(index).padStart(2, "0")}:00:00`,
+}));
+
+test("deterministically selects randomized Immich photos without mutating the source", () => {
+  const originalIds = photos.map((photo) => photo.id);
+  const settings = { randomize: true, photoLimit: 4 };
+  const first = selectImmichWidgetPhotos(photos, "2026-07-24", settings);
+  const second = selectImmichWidgetPhotos(photos, "2026-07-24", settings);
+  assert.deepEqual(first, second);
+  assert.equal(first.length, 4);
+  assert.deepEqual(photos.map((photo) => photo.id), originalIds);
+  assert.notDeepEqual(
+    first.map((photo) => photo.id),
+    selectImmichWidgetPhotos(photos, "2026-07-25", settings).map((photo) => photo.id),
+  );
+});
+
+test("selects the first Immich photos in source order when randomization is disabled", () => {
+  assert.deepEqual(
+    selectImmichWidgetPhotos(photos, "2026-07-24", { randomize: false, photoLimit: 3 }),
+    photos.slice(0, 3),
+  );
+});
+
+test("returns every Immich photo when the limit exceeds the available set", () => {
+  assert.equal(
+    selectImmichWidgetPhotos(photos, "2026-07-24", { randomize: true, photoLimit: 12 }),
+    photos,
+  );
 });
