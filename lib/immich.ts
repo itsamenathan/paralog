@@ -97,7 +97,6 @@ export async function photosForDate(date: string) {
   const matching = assets.filter((asset) => (asset.localDateTime || asset.fileCreatedAt || '').slice(0, 10) === date);
   const photos: ImmichPhoto[] = matching
     .filter((asset): asset is ImmichAsset & { id: string } => typeof asset.id === 'string' && ASSET_ID_PATTERN.test(asset.id))
-    .slice(0, 6)
     .map((asset) => ({
       id: asset.id,
       width: typeof asset.width === 'number' ? asset.width : null,
