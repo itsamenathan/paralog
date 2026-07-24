@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { settingsTable } from "@/lib/db/schema";
 import { legacyWidgetSettings, normalizeWidgetLayout, resolveWidgetLayoutUpdate, type WidgetLayout } from "@/lib/widget-layout";
+import { normalizeWidgetSettings, resolveWidgetSettingsUpdate, type WidgetSettings } from "@/lib/widget-settings";
 import { validateSaveFormat } from "./path-format";
 
 export const DEFAULT_SAVE_FORMAT = "YYYY/MM-MMMM/YYYY-MM-DD-dddd.md";
@@ -38,12 +39,23 @@ function widgetLayout() {
   });
 }
 
+function widgetSettings() {
+  const stored = settingValue("widgetSettings");
+  if (!stored) return normalizeWidgetSettings(undefined);
+  try {
+    return normalizeWidgetSettings(JSON.parse(stored));
+  } catch {
+    return normalizeWidgetSettings(undefined);
+  }
+}
+
 export function settings() {
   const layout = widgetLayout();
   return {
     saveFormat: setting("saveFormat", DEFAULT_SAVE_FORMAT),
     template: setting("template", ""),
     widgetLayout: layout,
+    widgetSettings: widgetSettings(),
     ...legacyWidgetSettings(layout),
     vimMode: setting("vimMode", "false") === "true",
     autoSave: setting("autoSave", "true") !== "false",
@@ -55,6 +67,7 @@ export function updateSettings(values: {
   saveFormat?: string;
   template?: string;
   widgetLayout?: WidgetLayout;
+  widgetSettings?: WidgetSettings;
   showTagCloud?: boolean;
   vimMode?: boolean;
   autoSave?: boolean;
@@ -69,11 +82,13 @@ export function updateSettings(values: {
   const autoSave = values.autoSave ?? current.autoSave;
   const autoLocation = values.autoLocation ?? current.autoLocation;
   const nextWidgetLayout = resolveWidgetLayoutUpdate(current.widgetLayout, values);
+  const nextWidgetSettings = resolveWidgetSettingsUpdate(current.widgetSettings, values.widgetSettings);
   const legacy = legacyWidgetSettings(nextWidgetLayout);
   const upsert = (key: string, value: string) => db().insert(settingsTable).values({ key, value }).onConflictDoUpdate({ target: settingsTable.key, set: { value } }).run();
   upsert("saveFormat", saveFormat);
   upsert("template", template);
   upsert("widgetLayout", JSON.stringify(nextWidgetLayout));
+  upsert("widgetSettings", JSON.stringify(nextWidgetSettings));
   upsert("showTagCloud", String(legacy.showTagCloud));
   upsert("vimMode", String(vimMode));
   upsert("autoSave", String(autoSave));

@@ -9,6 +9,7 @@ import { journalWordCount, markdownBody, setLocationFrontMatter } from "@/lib/fr
 import { entryMap, mergeCalendarEntries, type CalendarEntry } from "@/lib/calendar-entries";
 import type { DayPhoto, DaySummaryActivity } from "@/lib/day-activity-types";
 import { DEFAULT_WIDGET_LAYOUT } from "@/lib/widget-layout";
+import { DEFAULT_WIDGET_SETTINGS } from "@/lib/widget-settings";
 import { ActivityWidget } from "./widgets/activity-widget";
 import { ArchiveWidget } from "./widgets/archive-widget";
 import { displayDate, fromIso, iso, monthKey } from "./widgets/date-utils";
@@ -728,7 +729,15 @@ export default function Journal() {
     const layout = settings?.widgetLayout || DEFAULT_WIDGET_LAYOUT;
     return layout.context.map((provider) => {
       if (layout.hidden.includes(provider)) return null;
-      if (provider === "immich") return <ImmichWidget key={provider} photos={photos} total={photoTotal} selected={selected} placement={placement} onOpen={setOpenPhoto} />;
+      if (provider === "immich") return <ImmichWidget
+        key={provider}
+        photos={photos}
+        total={photoTotal}
+        selected={selected}
+        placement={placement}
+        settings={settings?.widgetSettings.immich || DEFAULT_WIDGET_SETTINGS.immich}
+        onOpen={setOpenPhoto}
+      />;
       if (provider === "archive") return <ArchiveWidget key={provider} memories={entry.memories} selected={selected} expanded={showAllMemories} placement={placement} onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />;
       if (provider === "random") return <RandomMemoryWidget key={provider} memory={randomMemory.memory} selected={selected} scope={randomMemory.scope} loading={randomMemory.loading} placement={placement} onScopeChange={randomMemory.setScope} onRefresh={randomMemory.refresh} onChoose={choose} />;
       const activity = activities.find((item): item is DaySummaryActivity => item.kind === "summary" && item.provider === provider);

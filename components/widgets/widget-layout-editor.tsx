@@ -1,25 +1,43 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { WidgetId, WidgetLayout } from "@/lib/widget-layout";
+import type { WidgetSettings } from "@/lib/widget-settings";
 import { WIDGETS } from "./registry";
+import { ImmichSettingsDialog } from "./widget-settings-dialog";
 
 type WidgetZone = "navigation" | "context";
 
-export function WidgetLayoutEditor({ layout, onChange }: {
+export function WidgetLayoutEditor({ layout, widgetSettings, onLayoutChange, onWidgetSettingsChange }: {
   layout: WidgetLayout;
-  onChange: (layout: WidgetLayout) => void;
+  widgetSettings: WidgetSettings;
+  onLayoutChange: (layout: WidgetLayout) => void;
+  onWidgetSettingsChange: (settings: WidgetSettings) => void;
 }) {
   const [dragging, setDragging] = useState<{ id: WidgetId; zone: WidgetZone } | null>(null);
+  const [configuring, setConfiguring] = useState<WidgetId | null>(null);
   const draggingRef = useRef(dragging);
+  const settingsTriggers = useRef<Partial<Record<WidgetId, HTMLButtonElement>>>({});
   draggingRef.current = dragging;
+
+  const closeSettings = useCallback(() => setConfiguring(null), []);
+
+  useEffect(() => {
+    if (!configuring) return;
+    const settingsDialog = settingsTriggers.current[configuring]?.closest<HTMLElement>(".settings");
+    settingsDialog?.setAttribute("inert", "");
+    return () => {
+      settingsDialog?.removeAttribute("inert");
+      window.requestAnimationFrame(() => settingsTriggers.current[configuring]?.focus());
+    };
+  }, [configuring]);
 
   function ordered(zone: WidgetZone) {
     return layout[zone] as WidgetId[];
   }
 
   function updateOrder(zone: WidgetZone, ids: WidgetId[]) {
-    onChange({
+    onLayoutChange({
       ...layout,
       [zone]: ids,
     } as WidgetLayout);
@@ -52,7 +70,7 @@ export function WidgetLayoutEditor({ layout, onChange }: {
     if (visible) hidden.delete(id);
     else hidden.add(id);
     hidden.delete("calendar");
-    onChange({ ...layout, hidden: [...hidden] });
+    onLayoutChange({ ...layout, hidden: [...hidden] });
   }
 
   function start(zone: WidgetZone, id: WidgetId) {
@@ -104,6 +122,17 @@ export function WidgetLayoutEditor({ layout, onChange }: {
               {definition.hideable
                 ? <label className="widget-visibility"><input type="checkbox" checked={visible} onChange={(event) => toggle(id, event.target.checked)} /><span>{visible ? "Shown" : "Hidden"}</span></label>
                 : <small>Always shown</small>}
+              {definition.configurable && <button
+                ref={(element) => {
+                  if (element) settingsTriggers.current[id] = element;
+                  else delete settingsTriggers.current[id];
+                }}
+                type="button"
+                className="widget-configure"
+                aria-label={`Configure ${definition.label}`}
+                title={`Configure ${definition.label}`}
+                onClick={() => setConfiguring(id)}
+              ><span aria-hidden="true">⚙</span></button>}
               {definition.hideable && <button
                 type="button"
                 className="widget-drag-handle"
@@ -152,5 +181,10 @@ export function WidgetLayoutEditor({ layout, onChange }: {
     {group("navigation", "Navigation", "Shown in the desktop sidebar and mobile date browser. The month stays first.")}
     {group("context", "Daily context", "Shown beside the editor on desktop and below it on mobile.")}
     <p className="widget-order-status" aria-live="polite">{active ? `${active} picked up. Drag it, or use the arrow keys, then press Enter to drop.` : ""}</p>
+    {configuring === "immich" && <ImmichSettingsDialog
+      settings={widgetSettings.immich}
+      onChange={(immich) => onWidgetSettingsChange({ ...widgetSettings, immich })}
+      onClose={closeSettings}
+    />}
   </section>;
 }
