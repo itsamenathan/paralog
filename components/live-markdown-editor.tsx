@@ -9,6 +9,7 @@ import { openSearchPanel } from "@codemirror/search";
 import { Vim, vim } from "@replit/codemirror-vim";
 import { journalReferences } from "@/lib/markdown-references";
 import { exitEmptyMarkdownBlock, keepMobileCursorVisible, livePreviewVerticalTarget, moveLivePreviewVertically } from "@/lib/editor/commands";
+import { livePreviewPointerCoords } from "@/lib/editor/pointer-position";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
 import { AttachmentPicker } from "./attachments/attachment-picker";
 import { EditorToolbar } from "./editor/editor-toolbar";
@@ -348,12 +349,11 @@ function lineBiasedPosition(view: EditorView, event: MouseEvent) {
   const rect = line.getBoundingClientRect();
   const lineHeight = Number.parseFloat(getComputedStyle(line).lineHeight) || rect.height;
   if (!Number.isFinite(lineHeight) || lineHeight <= 0) return null;
-  const offsetY = Math.max(0, Math.min(event.clientY - rect.top, Math.max(0, rect.height - 1)));
-  const visualRow = Math.floor(offsetY / lineHeight);
-  const rowTop = rect.top + visualRow * lineHeight;
-  const rowBottom = Math.min(rect.bottom, rowTop + lineHeight);
-  const y = Math.min(rowTop + lineHeight * 0.25, rowBottom - 1);
-  return view.posAtCoords({ x: event.clientX, y });
+  const range = document.createRange();
+  range.selectNodeContents(line);
+  const coords = livePreviewPointerCoords(rect, [...range.getClientRects()], event.clientX, event.clientY, lineHeight);
+  range.detach();
+  return view.posAtCoords(coords);
 }
 
 const liveClickSelection: Extension = EditorView.mouseSelectionStyle.of((view, event) => {
