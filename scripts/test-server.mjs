@@ -123,10 +123,46 @@ async function status() {
   console.log(state.defaultPassword ? "Password: paralog" : "Password: configured via PARALOG_TEST_PASSWORD");
 }
 
+async function serve() {
+  const testRoot = path.join(root, ".test-data");
+  const dataDir = path.resolve(process.env.PARALOG_TEST_DATA_DIR || path.join(testRoot, "e2e"));
+  const relative = path.relative(testRoot, dataDir);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`E2E data directory must be a child of ${testRoot}`);
+  }
+  if (process.env.PARALOG_TEST_RESET === "1") fs.rmSync(dataDir, { recursive: true, force: true });
+  fs.mkdirSync(dataDir, { recursive: true });
+
+  const port = Number.parseInt(process.env.PARALOG_TEST_PORT || "3100", 10);
+  const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
+  const child = spawn(process.execPath, [next, "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
+    cwd: root,
+    windowsHide: true,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      PARALOG_DATA_DIR: dataDir,
+      PARALOG_PASSWORD: process.env.PARALOG_TEST_PASSWORD || "paralog",
+      PARALOG_AUTH_SECRET: process.env.PARALOG_TEST_AUTH_SECRET || "paralog-e2e-secret-not-for-production",
+    },
+  });
+  const stop = (signal) => {
+    if (!child.killed) child.kill(signal);
+  };
+  process.once("SIGINT", () => stop("SIGINT"));
+  process.once("SIGTERM", () => stop("SIGTERM"));
+  child.once("exit", (code, signal) => {
+    if (signal) process.kill(process.pid, signal);
+    else process.exitCode = code ?? 0;
+  });
+}
+
 if (command === "start") await start();
 else if (command === "stop") await stop();
 else if (command === "status") await status();
+else if (command === "serve") await serve();
 else {
-  console.error("Usage: node scripts/test-server.mjs <start|status|stop>");
+  console.error("Usage: node scripts/test-server.mjs <start|status|stop|serve>");
   process.exitCode = 1;
 }
