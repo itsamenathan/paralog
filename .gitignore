@@ -25,6 +25,8 @@ data/
 # Test and tooling output
 coverage/
 .test-data/
+playwright-report/
+test-results/
 .paralog-test-server.json
 *.tsbuildinfo
 *.log

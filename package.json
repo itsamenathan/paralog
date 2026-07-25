@@ -11,10 +11,13 @@
     "test:migrations": "node --test scripts/test-migrations.mjs",
     "test:widgets": "node --no-warnings --test scripts/test-widget-layout.mjs",
     "test:features": "node --no-warnings --test scripts/test-maintainability.mjs",
+    "test:e2e": "playwright test",
     "test": "npm run test:migrations && npm run test:widgets && npm run test:features"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "6.5.0",
+    "@codemirror/language": "6.12.4",
+    "@lezer/common": "1.5.2",
     "@replit/codemirror-vim": "6.3.0",
     "better-sqlite3": "12.11.1",
     "codemirror": "6.0.2",
@@ -29,6 +32,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.0",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "26.1.1",
     "@types/react": "19.2.17",
