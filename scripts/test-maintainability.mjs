@@ -3,6 +3,7 @@ import path from "node:path";
 import test from "node:test";
 import { entryMap, mergeCalendarEntries } from "../lib/calendar-entries.ts";
 import { exitEmptyMarkdownBlock, moveLivePreviewVertically } from "../lib/editor/commands.ts";
+import { livePreviewPointerCoords } from "../lib/editor/pointer-position.ts";
 import { journalWordCount, markdownBody, setLocationFrontMatter } from "../lib/front-matter.ts";
 import { renderEntryPath, resolveEntryPath, validateSaveFormat } from "../lib/journal/path-format.ts";
 import { revisionChanges } from "../lib/journal/revision-diff.ts";
@@ -374,4 +375,39 @@ test("Live Preview vertical movement retains CodeMirror movement within wrapped 
   const view = verticalNavigationView(text, second + 20, second + 8, second);
   assert.equal(moveLivePreviewVertically(view, -1), true);
   assert.deepEqual(view.transaction(), { selection: { anchor: second + 8 } });
+});
+
+test("Live Preview pointer hit testing follows actual wrapped text rows", () => {
+  const rect = (top, bottom, left = 20, right = 280) => ({
+    top, bottom, left, right, width: right - left, height: bottom - top,
+  });
+  const line = rect(100, 208);
+  const rows = [
+    rect(102, 124),
+    rect(138, 160),
+    rect(174, 196),
+  ];
+
+  assert.deepEqual(livePreviewPointerCoords(line, rows, 140, 145, 24), { x: 140, y: 139 });
+  assert.deepEqual(livePreviewPointerCoords(line, rows, 140, 190, 24), { x: 140, y: 175 });
+});
+
+test("Live Preview pointer hit testing stays inside the clicked inline fragment", () => {
+  const line = { top: 100, bottom: 128, left: 20, right: 280, width: 260, height: 28 };
+  const smallCode = { top: 106, bottom: 122, left: 180, right: 240, width: 60, height: 16 };
+  const bodyText = { top: 102, bottom: 124, left: 20, right: 170, width: 150, height: 22 };
+
+  assert.deepEqual(livePreviewPointerCoords(line, [bodyText, smallCode], 210, 114, 24), { x: 210, y: 107 });
+  assert.deepEqual(livePreviewPointerCoords(line, [bodyText, smallCode], 270, 114, 24), { x: 239, y: 107 });
+});
+
+test("Live Preview pointer hit testing keeps trailing whitespace on the last wrapped row", () => {
+  const line = { top: 100, bottom: 184, left: 20, right: 300, width: 280, height: 84 };
+  const rows = [
+    { top: 102, bottom: 122, left: 20, right: 290, width: 270, height: 20 },
+    { top: 130, bottom: 150, left: 20, right: 292, width: 272, height: 20 },
+    { top: 158, bottom: 178, left: 20, right: 126, width: 106, height: 20 },
+  ];
+
+  assert.deepEqual(livePreviewPointerCoords(line, rows, 260, 168, 28), { x: 125, y: 159 });
 });
