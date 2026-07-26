@@ -2,437 +2,24 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { basicSetup } from "codemirror";
-import { markdown } from "@codemirror/lang-markdown";
-import { Compartment, EditorSelection, EditorState, Facet, Prec, type Extension, type Range } from "@codemirror/state";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
-import { Vim, vim } from "@replit/codemirror-vim";
-import { journalReferences } from "@/lib/markdown-references";
-import { exitEmptyMarkdownBlock, keepMobileCursorVisible, livePreviewVerticalTarget, moveLivePreviewVertically } from "@/lib/editor/commands";
-import { livePreviewPointerCoords } from "@/lib/editor/pointer-position";
+import { vim } from "@replit/codemirror-vim";
+import { exitEmptyMarkdownBlock, keepMobileCursorVisible } from "@/lib/editor/commands";
+import { livePreviewExtension, moveLivePreviewVertically, propertyIconConfig } from "@/lib/editor/live-preview";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
+import { propertyIconName, type PropertyIcons } from "@/lib/property-icons";
 import { AttachmentPicker } from "./attachments/attachment-picker";
 import { EditorToolbar } from "./editor/editor-toolbar";
 import { PropertyIconPopover } from "./editor/property-icon-picker";
 import { SuggestionMenu, type SuggestionMenuItem } from "./editor/suggestion-menu";
-import { normalizePropertyKey, propertyIconName, type PropertyIcons } from "@/lib/property-icons";
-import { renderPropertyIconSvg } from "@/lib/icons/property-icon-nodes";
 import {
-  Decoration,
   EditorView,
-  ViewPlugin,
-  WidgetType,
   placeholder,
   keymap,
-  type DecorationSet,
-  type ViewUpdate,
 } from "@codemirror/view";
-
-class ImageWidget extends WidgetType {
-  constructor(private src: string, private alt: string) { super(); }
-  eq(widget: ImageWidget) { return widget.src === this.src && widget.alt === this.alt; }
-  toDOM(view: EditorView) {
-    const figure = document.createElement("figure");
-    figure.className = "cm-live-image";
-    const image = document.createElement("img");
-    image.src = this.src;
-    image.alt = this.alt;
-    image.loading = "lazy";
-    const scheduleMeasure = () => window.requestAnimationFrame(() => view.requestMeasure());
-    image.addEventListener("load", scheduleMeasure, { once: true });
-    image.addEventListener("error", scheduleMeasure, { once: true });
-    if (image.complete) scheduleMeasure();
-    figure.append(image);
-    if (this.alt) {
-      const caption = document.createElement("figcaption");
-      caption.textContent = this.alt;
-      figure.append(caption);
-    }
-    return figure;
-  }
-}
-
-class BulletWidget extends WidgetType {
-  toDOM() {
-    const bullet = document.createElement("span");
-    bullet.className = "cm-live-bullet";
-    bullet.textContent = "•";
-    return bullet;
-  }
-}
-
-class TaskCheckboxWidget extends WidgetType {
-  constructor(private checked: boolean, private checkboxPosition: number) { super(); }
-  eq(widget: TaskCheckboxWidget) {
-    return widget.checked === this.checked && widget.checkboxPosition === this.checkboxPosition;
-  }
-  toDOM(view: EditorView) {
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.className = "cm-live-task-checkbox";
-    checkbox.checked = this.checked;
-    checkbox.tabIndex = -1;
-    checkbox.setAttribute("aria-label", this.checked ? "Mark task incomplete" : "Mark task complete");
-    checkbox.addEventListener("mousedown", (event) => event.preventDefault());
-    checkbox.addEventListener("click", (event) => {
-      event.preventDefault();
-      view.dispatch({ changes: { from: this.checkboxPosition, to: this.checkboxPosition + 1, insert: this.checked ? " " : "x" } });
-      view.focus();
-    });
-    return checkbox;
-  }
-}
-
-type PropertyIconConfig = {
-  icons: PropertyIcons;
-  openPicker: (property: string) => void;
-};
-
-const DEFAULT_PROPERTY_ICON_CONFIG: PropertyIconConfig = { icons: {}, openPicker: () => {} };
-
-const propertyIconConfig = Facet.define<PropertyIconConfig, PropertyIconConfig>({
-  combine: (values) => values[0] ?? DEFAULT_PROPERTY_ICON_CONFIG,
-});
-
-class PropertyIconWidget extends WidgetType {
-  constructor(
-    private property: string,
-    private icon: string,
-    private openPicker: (property: string) => void,
-  ) { super(); }
-  // The callback is referentially stable, so identity is fully described by the row.
-  eq(widget: PropertyIconWidget) {
-    return widget.property === this.property && widget.icon === this.icon;
-  }
-  toDOM() {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "cm-live-property-icon";
-    button.dataset.property = this.property;
-    button.tabIndex = -1;
-    button.setAttribute("aria-label", `Change the ${this.property} property icon`);
-    button.append(renderPropertyIconSvg(this.icon));
-    // Front matter reverts to raw YAML once the cursor moves into it, which
-    // would remove the very row being configured.
-    button.addEventListener("mousedown", (event) => event.preventDefault());
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      this.openPicker(this.property);
-    });
-    return button;
-  }
-}
-
-function liveDecorations(view: EditorView): { decorations: DecorationSet; atomic: DecorationSet } {
-  const decorations: Range<Decoration>[] = [];
-  const atomic: Range<Decoration>[] = [];
-  const selection = view.state.selection.main;
-  const activeLine = view.state.doc.lineAt(selection.head).number;
-  const iconConfig = view.state.facet(propertyIconConfig);
-  let metadataEndLine = 0;
-  if (view.state.doc.line(1).text.trim() === "---") {
-    for (let lineNumber = 2; lineNumber <= view.state.doc.lines; lineNumber += 1) {
-      if (view.state.doc.line(lineNumber).text.trim() === "---") {
-        metadataEndLine = lineNumber;
-        break;
-      }
-    }
-  }
-  const metadataEditing = Boolean(metadataEndLine && activeLine <= metadataEndLine && (view.hasFocus || !selection.empty));
-  const fencedLines = new Set<number>();
-  let fence: { character: string; length: number } | null = null;
-  for (let lineNumber = 1; lineNumber <= view.state.doc.lines; lineNumber += 1) {
-    const line = view.state.doc.line(lineNumber);
-    const marker = line.text.match(/^\s*(`{3,}|~{3,})/)?.[1];
-    if (fence) {
-      fencedLines.add(lineNumber);
-      if (marker?.[0] === fence.character && marker.length >= fence.length) fence = null;
-    } else if (marker) {
-      fence = { character: marker[0], length: marker.length };
-      fencedLines.add(lineNumber);
-    }
-  }
-  const addMark = (from: number, to: number, className: string) => {
-    if (to > from) decorations.push(Decoration.mark({ class: className }).range(from, to));
-  };
-  const hide = (from: number, to: number) => {
-    if (to > from) {
-      const replacement = Decoration.replace({}).range(from, to);
-      decorations.push(replacement);
-      atomic.push(replacement);
-    }
-  };
-
-  for (const { from, to } of view.visibleRanges) {
-    let position = from;
-    while (position <= to) {
-      const line = view.state.doc.lineAt(position);
-      const text = line.text;
-      const active = line.number === activeLine;
-
-      if (metadataEndLine && line.number <= metadataEndLine) {
-        const field = line.number !== 1 && line.number !== metadataEndLine
-          ? text.match(/^(\s*)([\w-]+)(\s*:)(.*)$/)
-          : null;
-        const rootField = field && field[1].length === 0 ? field : null;
-        const positionClass = line.number === 1
-          ? " cm-live-metadata-start"
-          : line.number === metadataEndLine
-            ? " cm-live-metadata-end"
-            : "";
-        const propertyName = rootField ? normalizePropertyKey(rootField[2]) : "";
-        const fieldClass = !metadataEditing && rootField
-          ? ` cm-live-metadata-field${propertyName ? ` cm-live-metadata-property-${propertyName}` : ""}`
-          : "";
-        const modeClass = metadataEditing ? " cm-live-metadata-editing" : " cm-live-metadata-preview";
-        decorations.push(Decoration.line({ class: `cm-live-metadata${modeClass}${positionClass}${fieldClass}` }).range(line.from));
-        if (!metadataEditing && rootField && propertyName) {
-          decorations.push(Decoration.widget({
-            widget: new PropertyIconWidget(propertyName, propertyIconName(iconConfig.icons, propertyName), iconConfig.openPicker),
-            side: -1,
-          }).range(line.from));
-        }
-
-        if (line.number === 1 || line.number === metadataEndLine) {
-          addMark(line.from, line.to, `cm-live-metadata-delimiter cm-live-metadata-delimiter-${metadataEditing ? "editing" : "preview"}`);
-        } else if (field) {
-          const keyFrom = line.from + field[1].length;
-          const separatorFrom = keyFrom + field[2].length;
-          const separatorEnd = separatorFrom + field[3].length;
-          addMark(keyFrom, separatorFrom, "cm-live-metadata-key");
-          addMark(separatorFrom, separatorEnd, "cm-live-metadata-separator");
-          addMark(separatorEnd, line.to, "cm-live-metadata-value");
-        }
-
-        if (line.to >= to) break;
-        position = line.to + 1;
-        continue;
-      }
-
-      if (fencedLines.has(line.number)) {
-        decorations.push(Decoration.line({ class: "cm-live-codeblock" }).range(line.from));
-        if (line.to >= to) break;
-        position = line.to + 1;
-        continue;
-      }
-
-      const heading = text.match(/^(#{1,6})\s+/);
-      if (heading) {
-        decorations.push(Decoration.line({ class: `cm-live-heading cm-live-h${heading[1].length}` }).range(line.from));
-        if (!active) hide(line.from, line.from + heading[0].length);
-      }
-
-      const quote = text.match(/^\s*>\s?/);
-      if (quote) {
-        decorations.push(Decoration.line({ class: "cm-live-quote" }).range(line.from));
-        if (!active) hide(line.from, line.from + quote[0].length);
-      }
-
-      const task = text.match(/^(\s*)[-+*]\s+\[([ xX])\]\s+/);
-      if (task && !active) {
-        const markerFrom = line.from + task[1].length;
-        const checkboxPosition = markerFrom + task[0].indexOf("[") + 1;
-        const replacement = Decoration.replace({ widget: new TaskCheckboxWidget(task[2].toLowerCase() === "x", checkboxPosition) })
-          .range(markerFrom, line.from + task[0].length);
-        decorations.push(replacement);
-        atomic.push(replacement);
-      } else {
-        const bullet = text.match(/^(\s*)[-+*]\s+/);
-        if (bullet && !active) {
-          const markerFrom = line.from + bullet[1].length;
-          const replacement = Decoration.replace({ widget: new BulletWidget() }).range(markerFrom, line.from + bullet[0].length);
-          decorations.push(replacement);
-          atomic.push(replacement);
-        }
-      }
-
-      const images = /!\[([^\]]*)\]\(([^)]+)\)/g;
-      for (let match = images.exec(text); match; match = images.exec(text)) {
-        if (!active) {
-          const replacement = Decoration.replace({ widget: new ImageWidget(match[2], match[1]) })
-            .range(line.from + match.index, line.from + match.index + match[0].length);
-          decorations.push(replacement);
-          atomic.push(replacement);
-        }
-      }
-
-      const bold = /\*\*([^*\n]+)\*\*/g;
-      for (let match = bold.exec(text); match; match = bold.exec(text)) {
-        const start = line.from + match.index;
-        addMark(start + 2, start + match[0].length - 2, "cm-live-bold");
-        if (!active) { hide(start, start + 2); hide(start + match[0].length - 2, start + match[0].length); }
-      }
-      const boldMarkers = [...text.matchAll(/\*\*/g)];
-      if (active && boldMarkers.length % 2 === 1) {
-        const start = line.from + (boldMarkers.at(-1)?.index ?? 0) + 2;
-        addMark(start, line.to, "cm-live-bold");
-      }
-
-      const italic = /(^|[^*])\*([^*\n]+)\*(?!\*)/g;
-      for (let match = italic.exec(text); match; match = italic.exec(text)) {
-        const marker = line.from + match.index + match[1].length;
-        addMark(marker + 1, marker + match[0].length - match[1].length - 1, "cm-live-italic");
-        if (!active) { hide(marker, marker + 1); hide(marker + match[0].length - match[1].length - 1, marker + match[0].length - match[1].length); }
-      }
-
-      const strike = /~~([^~\n]+)~~/g;
-      for (let match = strike.exec(text); match; match = strike.exec(text)) {
-        const start = line.from + match.index;
-        addMark(start + 2, start + match[0].length - 2, "cm-live-strike");
-        if (!active) { hide(start, start + 2); hide(start + match[0].length - 2, start + match[0].length); }
-      }
-
-      const code = /`([^`\n]+)`/g;
-      for (let match = code.exec(text); match; match = code.exec(text)) {
-        const start = line.from + match.index;
-        addMark(start + 1, start + match[0].length - 1, "cm-live-code");
-        if (!active) { hide(start, start + 1); hide(start + match[0].length - 1, start + match[0].length); }
-      }
-
-      const links = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
-      for (let match = links.exec(text); match; match = links.exec(text)) {
-        const start = line.from + match.index;
-        const labelFrom = start + 1;
-        const labelTo = labelFrom + match[1].length;
-        const href = match[2].trim();
-        if (!active && /^(https?:\/\/|mailto:|\/|#)/i.test(href)) {
-          decorations.push(Decoration.mark({
-            tagName: "a",
-            class: "cm-live-link cm-live-navigation",
-            attributes: { href, ...(/^https?:\/\//i.test(href) ? { target: "_blank", rel: "noreferrer" } : {}) },
-          }).range(labelFrom, labelTo));
-        } else addMark(labelFrom, labelTo, "cm-live-link");
-        if (!active) { hide(start, start + 1); hide(labelTo, start + match[0].length); }
-      }
-
-      if (!active) {
-        const protectedRanges = [...text.matchAll(/`[^`\n]*`|!?\[[^\]]*\]\([^)]+\)/g)]
-          .map((match) => [match.index ?? 0, (match.index ?? 0) + match[0].length]);
-        const rawUrls = /https?:\/\/[^\s<]+/gi;
-        for (let match = rawUrls.exec(text); match; match = rawUrls.exec(text)) {
-          const href = match[0].replace(/[.,!?;:'"]+$/, "");
-          const from = match.index;
-          const to = from + href.length;
-          if (!href || protectedRanges.some(([protectedFrom, protectedTo]) => from < protectedTo && to > protectedFrom)) continue;
-          protectedRanges.push([from, to]);
-          decorations.push(Decoration.mark({
-            tagName: "a",
-            class: "cm-live-link cm-live-navigation",
-            attributes: { href, target: "_blank", rel: "noreferrer" },
-          }).range(line.from + from, line.from + to));
-        }
-        for (const reference of journalReferences(text)) {
-          if (protectedRanges.some(([from, to]) => reference.from < to && reference.to > from)) continue;
-          const collection = reference.kind === "tag" ? "tags" : "people";
-          decorations.push(Decoration.mark({
-            tagName: "a",
-            class: `cm-live-reference cm-live-${reference.kind} cm-live-navigation`,
-            attributes: { href: `/${collection}/${encodeURIComponent(reference.label.normalize("NFC").toLocaleLowerCase())}` },
-          }).range(line.from + reference.from, line.from + reference.to));
-        }
-      }
-
-      if (line.to >= to) break;
-      position = line.to + 1;
-    }
-  }
-  return { decorations: Decoration.set(decorations, true), atomic: Decoration.set(atomic, true) };
-}
-
-const livePreviewPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-    atomic: DecorationSet;
-    constructor(view: EditorView) {
-      ({ decorations: this.decorations, atomic: this.atomic } = liveDecorations(view));
-      view.requestMeasure();
-    }
-    update(update: ViewUpdate) {
-      // A compartment reconfigure sets none of the update flags, so the
-      // property icon config has to be compared directly.
-      if (update.docChanged || update.selectionSet || update.viewportChanged || update.focusChanged
-        || update.state.facet(propertyIconConfig) !== update.startState.facet(propertyIconConfig)) {
-        ({ decorations: this.decorations, atomic: this.atomic } = liveDecorations(update.view));
-        update.view.requestMeasure();
-      }
-    }
-  },
-  { decorations: (plugin) => plugin.decorations },
-);
-
-const livePreview: Extension = [
-  livePreviewPlugin,
-  EditorView.atomicRanges.of((view) => view.plugin(livePreviewPlugin)?.atomic ?? Decoration.none),
-];
-
-let vimNavigationConfigured = false;
-function configureLivePreviewVimNavigation() {
-  if (vimNavigationConfigured) return;
-  vimNavigationConfigured = true;
-
-  Vim.defineMotion("paralogMoveByLines", (cm, head, args) => {
-    const line = Math.max(cm.firstLine(), Math.min(cm.lastLine(), head.line + (args.forward ? args.repeat : -args.repeat)));
-    return cm.clipPos({ line, ch: head.ch });
-  });
-  Vim.defineMotion("paralogMoveByDisplayLines", (cm, head, args) => {
-    let range = EditorSelection.cursor(cm.indexFromPos(head));
-    for (let count = 0; count < args.repeat; count += 1) {
-      const target = livePreviewVerticalTarget(cm.cm6, range, args.forward ? 1 : -1);
-      if (target.head === range.head) break;
-      range = EditorSelection.cursor(target.head, 1, undefined, range.goalColumn);
-    }
-    return cm.posFromIndex(range.head);
-  });
-  for (const [keys, motion, forward] of [
-    ["j", "paralogMoveByLines", true],
-    ["k", "paralogMoveByLines", false],
-    ["gj", "paralogMoveByDisplayLines", true],
-    ["gk", "paralogMoveByDisplayLines", false],
-  ] as const) Vim.mapCommand(keys, "motion", motion, { forward }, {});
-}
-configureLivePreviewVimNavigation();
-
-function lineBiasedPosition(view: EditorView, event: MouseEvent) {
-  const target = event.target instanceof HTMLElement ? event.target : null;
-  const line = target?.closest<HTMLElement>(".cm-line");
-  // Front matter switches from a property preview to raw YAML on focus. Let
-  // CodeMirror own its native mouse selection there so dragging can continue
-  // across the DOM change without this Live Preview position bias interfering.
-  if (!line || line.classList.contains("cm-live-metadata") || !view.contentDOM.contains(line) || target?.closest("a.cm-live-navigation")) return null;
-  const rect = line.getBoundingClientRect();
-  const lineHeight = Number.parseFloat(getComputedStyle(line).lineHeight) || rect.height;
-  if (!Number.isFinite(lineHeight) || lineHeight <= 0) return null;
-  const range = document.createRange();
-  range.selectNodeContents(line);
-  const coords = livePreviewPointerCoords(rect, [...range.getClientRects()], event.clientX, event.clientY, lineHeight);
-  range.detach();
-  return view.posAtCoords(coords);
-}
-
-const liveClickSelection: Extension = EditorView.mouseSelectionStyle.of((view, event) => {
-  if (event.button !== 0 || event.detail > 1 || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return null;
-  const anchor = lineBiasedPosition(view, event);
-  if (anchor === null) return null;
-  return {
-    get(curEvent) {
-      const head = lineBiasedPosition(view, curEvent) ?? anchor;
-      return EditorSelection.single(anchor, head);
-    },
-    update() { return false; },
-  };
-});
-
-const referenceNavigation = EditorView.domEventHandlers({
-  mousedown(event) {
-    if (event.button !== 0) return false;
-    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>("a.cm-live-navigation");
-    if (!link) return false;
-    event.preventDefault();
-    if (link.target === "_blank") window.open(link.href, "_blank", "noopener,noreferrer");
-    else window.location.assign(link.href);
-    return true;
-  },
-});
 
 type LiveMarkdownEditorProps = {
   markdown: string;
@@ -476,15 +63,14 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
   const [pickerMode, setPickerMode] = useState<"all" | AttachmentKind | null>(null);
   const [pickerPosition, setPickerPosition] = useState<number | null>(null);
   const [iconProperty, setIconProperty] = useState<string | null>(null);
-  onChangeRef.current = onChange;
-  onUploadRef.current = onUpload;
-
   // Kept stable so a reconfigure only ever fires for an actual icon change.
   const openIconPickerRef = useRef<(property: string) => void>(() => {});
   openIconPickerRef.current = (property) => setIconProperty(property);
   const openIconPicker = useRef((property: string) => openIconPickerRef.current(property)).current;
   const propertyIconsRef = useRef(propertyIcons);
   propertyIconsRef.current = propertyIcons;
+  onChangeRef.current = onChange;
+  onUploadRef.current = onUpload;
 
   const selectMenuIndex = (index: number) => {
     menuIndexRef.current = index;
@@ -589,7 +175,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
         vimCompartment.current.of([]),
         iconCompartment.current.of(propertyIconConfig.of({ icons: propertyIconsRef.current, openPicker: openIconPicker })),
         basicSetup,
-        markdown(),
+        markdown({ base: markdownLanguage }),
         Prec.high(keymap.of([
           { key: "Enter", run: exitEmptyMarkdownBlock },
           { key: "ArrowUp", run: (view) => moveLivePreviewVertically(view, -1), shift: (view) => moveLivePreviewVertically(view, -1, true) },
@@ -600,9 +186,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: "true" }),
         placeholder("What’s on your mind?"),
-        livePreview,
-        liveClickSelection,
-        referenceNavigation,
+        livePreviewExtension(),
         Prec.high(editorEvents),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !externalUpdate.current) onChangeRef.current(update.state.doc.toString());

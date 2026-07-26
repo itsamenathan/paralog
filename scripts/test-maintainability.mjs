@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { EditorState } from "@codemirror/state";
 import { entryMap, mergeCalendarEntries } from "../lib/calendar-entries.ts";
-import { exitEmptyMarkdownBlock, moveLivePreviewVertically } from "../lib/editor/commands.ts";
-import { livePreviewPointerCoords } from "../lib/editor/pointer-position.ts";
+import { exitEmptyMarkdownBlock } from "../lib/editor/commands.ts";
+import { addNonOverlappingPreviewRange } from "../lib/editor/live-preview/decorations.ts";
+import { mapPointerAnchor } from "../lib/editor/live-preview/dom-position.ts";
+import { collectLivePreviewNodes, frontMatterEndLine } from "../lib/editor/live-preview/syntax.ts";
+import { moveLivePreviewVertically } from "../lib/editor/live-preview/vertical-motion.ts";
 import { journalWordCount, markdownBody, setLocationFrontMatter } from "../lib/front-matter.ts";
 import { renderEntryPath, resolveEntryPath, validateSaveFormat } from "../lib/journal/path-format.ts";
 import { revisionChanges } from "../lib/journal/revision-diff.ts";
@@ -377,37 +382,73 @@ test("Live Preview vertical movement retains CodeMirror movement within wrapped 
   assert.deepEqual(view.transaction(), { selection: { anchor: second + 8 } });
 });
 
-test("Live Preview pointer hit testing follows actual wrapped text rows", () => {
-  const rect = (top, bottom, left = 20, right = 280) => ({
-    top, bottom, left, right, width: right - left, height: bottom - top,
+function livePreviewState(doc, head = 0) {
+  return EditorState.create({
+    doc,
+    selection: { anchor: head },
+    extensions: [markdown({ base: markdownLanguage })],
   });
-  const line = rect(100, 208);
-  const rows = [
-    rect(102, 124),
-    rect(138, 160),
-    rect(174, 196),
-  ];
+}
 
-  assert.deepEqual(livePreviewPointerCoords(line, rows, 140, 145, 24), { x: 140, y: 139 });
-  assert.deepEqual(livePreviewPointerCoords(line, rows, 140, 190, 24), { x: 140, y: 175 });
+test("Live Preview syntax model uses GFM structure and exact marker ranges", () => {
+  const doc = [
+    "# Heading",
+    "> quote",
+    "- [x] task",
+    "Text with **bold**, *italic*, ~~strike~~, `code`, [link](https://example.com), and ![alt](/photo.png).",
+    "```js",
+    "const value = 1;",
+    "```",
+  ].join("\n");
+  const state = livePreviewState(doc);
+  const nodes = collectLivePreviewNodes(state, [{ from: 0, to: doc.length }], 1);
+  const kinds = new Set(nodes.map((node) => node.kind));
+  for (const kind of ["heading", "quote", "task", "strong", "emphasis", "strike", "inline-code", "link", "image", "code-block"]) {
+    assert.equal(kinds.has(kind), true, `missing ${kind}`);
+  }
+  const heading = nodes.find((node) => node.kind === "heading");
+  assert.deepEqual(heading.markerRanges, [{ from: 0, to: 2 }]);
+  const strong = nodes.find((node) => node.kind === "strong");
+  assert.equal(state.sliceDoc(strong.from, strong.to), "bold");
+  assert.deepEqual(strong.markerRanges.map((range) => state.sliceDoc(range.from, range.to)), ["**", "**"]);
 });
 
-test("Live Preview pointer hit testing stays inside the clicked inline fragment", () => {
-  const line = { top: 100, bottom: 128, left: 20, right: 280, width: 260, height: 28 };
-  const smallCode = { top: 106, bottom: 122, left: 180, right: 240, width: 60, height: 16 };
-  const bodyText = { top: 102, bottom: 124, left: 20, right: 170, width: 150, height: 22 };
-
-  assert.deepEqual(livePreviewPointerCoords(line, [bodyText, smallCode], 210, 114, 24), { x: 210, y: 107 });
-  assert.deepEqual(livePreviewPointerCoords(line, [bodyText, smallCode], 270, 114, 24), { x: 239, y: 107 });
+test("Live Preview syntax model excludes references and URLs inside protected Markdown", () => {
+  const doc = [
+    "Keep #visible and @person with https://example.com/visible.",
+    "`#code https://example.com/code`",
+    "[#label](https://example.com/link)",
+    "```md",
+    "#fenced @hidden https://example.com/fenced",
+    "```",
+  ].join("\n");
+  const state = livePreviewState(doc);
+  const nodes = collectLivePreviewNodes(state, [{ from: 0, to: doc.length }], 1);
+  assert.deepEqual(nodes.filter((node) => node.kind === "tag").map((node) => state.sliceDoc(node.from, node.to)), ["#visible"]);
+  assert.deepEqual(nodes.filter((node) => node.kind === "person").map((node) => state.sliceDoc(node.from, node.to)), ["@person"]);
+  assert.deepEqual(nodes.filter((node) => node.kind === "raw-url").map((node) => state.sliceDoc(node.from, node.to)), ["https://example.com/visible"]);
 });
 
-test("Live Preview pointer hit testing keeps trailing whitespace on the last wrapped row", () => {
-  const line = { top: 100, bottom: 184, left: 20, right: 300, width: 280, height: 84 };
-  const rows = [
-    { top: 102, bottom: 122, left: 20, right: 290, width: 270, height: 20 },
-    { top: 130, bottom: 150, left: 20, right: 292, width: 272, height: 20 },
-    { top: 158, bottom: 178, left: 20, right: 126, width: 106, height: 20 },
-  ];
+test("Live Preview syntax model preserves metadata boundaries and incomplete active bold", () => {
+  const doc = "---\nlocation: Denver\ntags: [work]\n---\n\n**unfinished";
+  const state = livePreviewState(doc, doc.length);
+  assert.equal(frontMatterEndLine(state), 4);
+  const nodes = collectLivePreviewNodes(state, [{ from: 0, to: doc.length }], 6);
+  assert.deepEqual(nodes.filter((node) => node.kind === "metadata").map((node) => node.attributes.role), ["start", "field", "field", "end"]);
+  const incomplete = nodes.find((node) => node.kind === "strong" && node.markerRanges?.length === 0);
+  assert.equal(state.sliceDoc(incomplete.from, incomplete.to), "unfinished");
+});
 
-  assert.deepEqual(livePreviewPointerCoords(line, rows, 260, 168, 28), { x: 125, y: 159 });
+test("Live Preview replacement ranges cannot overlap", () => {
+  const ranges = [];
+  assert.equal(addNonOverlappingPreviewRange(ranges, { from: 2, to: 5 }), true);
+  assert.equal(addNonOverlappingPreviewRange(ranges, { from: 5, to: 8 }), true);
+  assert.equal(addNonOverlappingPreviewRange(ranges, { from: 4, to: 6 }), false);
+  assert.deepEqual(ranges, [{ from: 2, to: 5 }, { from: 5, to: 8 }]);
+});
+
+test("Live Preview pointer anchors map through document edits", () => {
+  const state = EditorState.create({ doc: "before after" });
+  const changes = state.changes({ from: 0, insert: "new " });
+  assert.equal(mapPointerAnchor(7, changes), 11);
 });

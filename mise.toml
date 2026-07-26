@@ -17,6 +17,10 @@ run = "npm run build"
 description = "Run migration, widget, and feature behavior tests"
 run = "npm test"
 
+[tasks."test:e2e"]
+description = "Run Live Preview browser interaction tests"
+run = "npm run test:e2e"
+
 [tasks.start]
 description = "Serve the production build"
 run = "npm run start"
