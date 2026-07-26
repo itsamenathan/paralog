@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { basicSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";
-import { Compartment, EditorSelection, EditorState, Prec, type Extension, type Range } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Facet, Prec, type Extension, type Range } from "@codemirror/state";
 import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import { Vim, vim } from "@replit/codemirror-vim";
@@ -13,7 +13,10 @@ import { livePreviewPointerCoords } from "@/lib/editor/pointer-position";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
 import { AttachmentPicker } from "./attachments/attachment-picker";
 import { EditorToolbar } from "./editor/editor-toolbar";
+import { PropertyIconPopover } from "./editor/property-icon-picker";
 import { SuggestionMenu, type SuggestionMenuItem } from "./editor/suggestion-menu";
+import { normalizePropertyKey, propertyIconName, type PropertyIcons } from "@/lib/property-icons";
+import { renderPropertyIconSvg } from "@/lib/icons/property-icon-nodes";
 import {
   Decoration,
   EditorView,
@@ -80,11 +83,52 @@ class TaskCheckboxWidget extends WidgetType {
   }
 }
 
+type PropertyIconConfig = {
+  icons: PropertyIcons;
+  openPicker: (property: string) => void;
+};
+
+const DEFAULT_PROPERTY_ICON_CONFIG: PropertyIconConfig = { icons: {}, openPicker: () => {} };
+
+const propertyIconConfig = Facet.define<PropertyIconConfig, PropertyIconConfig>({
+  combine: (values) => values[0] ?? DEFAULT_PROPERTY_ICON_CONFIG,
+});
+
+class PropertyIconWidget extends WidgetType {
+  constructor(
+    private property: string,
+    private icon: string,
+    private openPicker: (property: string) => void,
+  ) { super(); }
+  // The callback is referentially stable, so identity is fully described by the row.
+  eq(widget: PropertyIconWidget) {
+    return widget.property === this.property && widget.icon === this.icon;
+  }
+  toDOM() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "cm-live-property-icon";
+    button.dataset.property = this.property;
+    button.tabIndex = -1;
+    button.setAttribute("aria-label", `Change the ${this.property} property icon`);
+    button.append(renderPropertyIconSvg(this.icon));
+    // Front matter reverts to raw YAML once the cursor moves into it, which
+    // would remove the very row being configured.
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      this.openPicker(this.property);
+    });
+    return button;
+  }
+}
+
 function liveDecorations(view: EditorView): { decorations: DecorationSet; atomic: DecorationSet } {
   const decorations: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
   const selection = view.state.selection.main;
   const activeLine = view.state.doc.lineAt(selection.head).number;
+  const iconConfig = view.state.facet(propertyIconConfig);
   let metadataEndLine = 0;
   if (view.state.doc.line(1).text.trim() === "---") {
     for (let lineNumber = 2; lineNumber <= view.state.doc.lines; lineNumber += 1) {
@@ -136,12 +180,18 @@ function liveDecorations(view: EditorView): { decorations: DecorationSet; atomic
           : line.number === metadataEndLine
             ? " cm-live-metadata-end"
             : "";
-        const propertyName = rootField?.[2]?.toLocaleLowerCase().replace(/[^a-z0-9-]/g, "") ?? "";
+        const propertyName = rootField ? normalizePropertyKey(rootField[2]) : "";
         const fieldClass = !metadataEditing && rootField
           ? ` cm-live-metadata-field${propertyName ? ` cm-live-metadata-property-${propertyName}` : ""}`
           : "";
         const modeClass = metadataEditing ? " cm-live-metadata-editing" : " cm-live-metadata-preview";
         decorations.push(Decoration.line({ class: `cm-live-metadata${modeClass}${positionClass}${fieldClass}` }).range(line.from));
+        if (!metadataEditing && rootField && propertyName) {
+          decorations.push(Decoration.widget({
+            widget: new PropertyIconWidget(propertyName, propertyIconName(iconConfig.icons, propertyName), iconConfig.openPicker),
+            side: -1,
+          }).range(line.from));
+        }
 
         if (line.number === 1 || line.number === metadataEndLine) {
           addMark(line.from, line.to, `cm-live-metadata-delimiter cm-live-metadata-delimiter-${metadataEditing ? "editing" : "preview"}`);
@@ -298,7 +348,10 @@ const livePreviewPlugin = ViewPlugin.fromClass(
       view.requestMeasure();
     }
     update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged || update.focusChanged) {
+      // A compartment reconfigure sets none of the update flags, so the
+      // property icon config has to be compared directly.
+      if (update.docChanged || update.selectionSet || update.viewportChanged || update.focusChanged
+        || update.state.facet(propertyIconConfig) !== update.startState.facet(propertyIconConfig)) {
         ({ decorations: this.decorations, atomic: this.atomic } = liveDecorations(update.view));
         update.view.requestMeasure();
       }
@@ -394,15 +447,18 @@ type LiveMarkdownEditorProps = {
   tags: ReferenceSuggestion[];
   people: ReferenceSuggestion[];
   onBeforeAttachmentNavigation: () => void;
+  propertyIcons: PropertyIcons;
+  onPropertyIconChange: (property: string, icon: string | null) => void;
 };
 
 type ReferenceSuggestion = { name: string; count: number };
 type ReferenceQuery = { kind: "tag" | "person"; query: string; from: number; to: number };
 
-export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people, onBeforeAttachmentNavigation }: LiveMarkdownEditorProps) {
+export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people, onBeforeAttachmentNavigation, propertyIcons, onPropertyIconChange }: LiveMarkdownEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const vimCompartment = useRef(new Compartment());
+  const iconCompartment = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onUploadRef = useRef(onUpload);
   const externalUpdate = useRef(false);
@@ -419,8 +475,16 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
   const [linkUrl, setLinkUrl] = useState("");
   const [pickerMode, setPickerMode] = useState<"all" | AttachmentKind | null>(null);
   const [pickerPosition, setPickerPosition] = useState<number | null>(null);
+  const [iconProperty, setIconProperty] = useState<string | null>(null);
   onChangeRef.current = onChange;
   onUploadRef.current = onUpload;
+
+  // Kept stable so a reconfigure only ever fires for an actual icon change.
+  const openIconPickerRef = useRef<(property: string) => void>(() => {});
+  openIconPickerRef.current = (property) => setIconProperty(property);
+  const openIconPicker = useRef((property: string) => openIconPickerRef.current(property)).current;
+  const propertyIconsRef = useRef(propertyIcons);
+  propertyIconsRef.current = propertyIcons;
 
   const selectMenuIndex = (index: number) => {
     menuIndexRef.current = index;
@@ -523,6 +587,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       doc: value,
       extensions: [
         vimCompartment.current.of([]),
+        iconCompartment.current.of(propertyIconConfig.of({ icons: propertyIconsRef.current, openPicker: openIconPicker })),
         basicSetup,
         markdown(),
         Prec.high(keymap.of([
@@ -599,6 +664,12 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
     desktop.addEventListener("change", configureVim);
     return () => desktop.removeEventListener("change", configureVim);
   }, [vimMode]);
+
+  useEffect(() => {
+    editor.current?.dispatch({
+      effects: iconCompartment.current.reconfigure(propertyIconConfig.of({ icons: propertyIcons, openPicker: openIconPicker })),
+    });
+  }, [propertyIcons, openIconPicker]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -796,5 +867,14 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       <button type="button" aria-label="Code selection" onClick={() => wrap("`")}>{"<>"}</button>
     </div>}
     <AttachmentPicker open={pickerMode !== null} mode={pickerMode || "all"} entryDate={entryDate} online={online} onClose={() => setPickerMode(null)} onInsert={(markdown) => insertMarkdown(markdown, pickerPosition ?? undefined)} onBeforeNavigate={onBeforeAttachmentNavigation} />
+    {iconProperty && <PropertyIconPopover
+      property={iconProperty}
+      value={propertyIconName(propertyIcons, iconProperty)}
+      canReset={iconProperty in propertyIcons}
+      anchor={() => host.current?.querySelector<HTMLElement>(`.cm-live-property-icon[data-property="${CSS.escape(iconProperty)}"]`) ?? null}
+      onSelect={(icon) => { onPropertyIconChange(iconProperty, icon); setIconProperty(null); }}
+      onReset={() => { onPropertyIconChange(iconProperty, null); setIconProperty(null); }}
+      onClose={() => setIconProperty(null)}
+    />}
   </div>;
 }

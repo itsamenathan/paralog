@@ -11,7 +11,8 @@
     "test:migrations": "node --test scripts/test-migrations.mjs",
     "test:widgets": "node --no-warnings --test scripts/test-widget-layout.mjs",
     "test:features": "node --no-warnings --test scripts/test-maintainability.mjs",
-    "test": "npm run test:migrations && npm run test:widgets && npm run test:features"
+    "test:properties": "node --no-warnings --test scripts/test-property-icons.mjs",
+    "test": "npm run test:migrations && npm run test:widgets && npm run test:features && npm run test:properties"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "6.5.0",
@@ -20,6 +21,7 @@
     "codemirror": "6.0.2",
     "diff": "9.0.0",
     "drizzle-orm": "^0.45.2",
+    "lucide": "^1.27.0",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7",
@@ -34,6 +36,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@types/web-push": "^3.6.4",
+    "agent-browser": "^0.33.0",
     "drizzle-kit": "^0.31.10",
     "typescript": "6.0.3"
   }

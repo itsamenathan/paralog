@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { settingsTable } from "@/lib/db/schema";
 import { legacyWidgetSettings, normalizeWidgetLayout, resolveWidgetLayoutUpdate, type WidgetLayout } from "@/lib/widget-layout";
 import { normalizeWidgetSettings, resolveWidgetSettingsUpdate, type WidgetSettings } from "@/lib/widget-settings";
+import { normalizePropertyIcons, resolvePropertyIconsUpdate, type PropertyIcons } from "@/lib/property-icons";
 import { validateSaveFormat } from "./path-format";
 
 export const DEFAULT_SAVE_FORMAT = "YYYY/MM-MMMM/YYYY-MM-DD-dddd.md";
@@ -49,6 +50,16 @@ function widgetSettings() {
   }
 }
 
+function propertyIcons() {
+  const stored = settingValue("propertyIcons");
+  if (!stored) return normalizePropertyIcons(undefined);
+  try {
+    return normalizePropertyIcons(JSON.parse(stored));
+  } catch {
+    return normalizePropertyIcons(undefined);
+  }
+}
+
 export function settings() {
   const layout = widgetLayout();
   return {
@@ -56,6 +67,7 @@ export function settings() {
     template: setting("template", ""),
     widgetLayout: layout,
     widgetSettings: widgetSettings(),
+    propertyIcons: propertyIcons(),
     ...legacyWidgetSettings(layout),
     vimMode: setting("vimMode", "false") === "true",
     autoSave: setting("autoSave", "true") !== "false",
@@ -68,6 +80,7 @@ export function updateSettings(values: {
   template?: string;
   widgetLayout?: WidgetLayout;
   widgetSettings?: WidgetSettings;
+  propertyIcons?: PropertyIcons;
   showTagCloud?: boolean;
   vimMode?: boolean;
   autoSave?: boolean;
@@ -83,12 +96,14 @@ export function updateSettings(values: {
   const autoLocation = values.autoLocation ?? current.autoLocation;
   const nextWidgetLayout = resolveWidgetLayoutUpdate(current.widgetLayout, values);
   const nextWidgetSettings = resolveWidgetSettingsUpdate(current.widgetSettings, values.widgetSettings);
+  const nextPropertyIcons = resolvePropertyIconsUpdate(current.propertyIcons, values.propertyIcons);
   const legacy = legacyWidgetSettings(nextWidgetLayout);
   const upsert = (key: string, value: string) => db().insert(settingsTable).values({ key, value }).onConflictDoUpdate({ target: settingsTable.key, set: { value } }).run();
   upsert("saveFormat", saveFormat);
   upsert("template", template);
   upsert("widgetLayout", JSON.stringify(nextWidgetLayout));
   upsert("widgetSettings", JSON.stringify(nextWidgetSettings));
+  upsert("propertyIcons", JSON.stringify(nextPropertyIcons));
   upsert("showTagCloud", String(legacy.showTagCloud));
   upsert("vimMode", String(vimMode));
   upsert("autoSave", String(autoSave));

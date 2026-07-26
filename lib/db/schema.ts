@@ -65,6 +65,14 @@ export const journalReferencesTable = sqliteTable("journal_references", {
   index("journal_references_entry_date").on(table.entryDate),
 ]);
 
+export const entryProperties = sqliteTable("entry_properties", {
+  entryDate: text("entry_date").notNull(),
+  name: text("name").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.entryDate, table.name] }),
+  index("entry_properties_name").on(table.name),
+]);
+
 export const notificationConfig = sqliteTable("notification_config", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),

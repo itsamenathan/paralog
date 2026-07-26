@@ -21,6 +21,10 @@ run = "npm test"
 description = "Serve the production build"
 run = "npm run start"
 
+[tasks.browser]
+description = "Drive the app in a real browser with agent-browser"
+run = "npx agent-browser"
+
 [tasks."test:start"]
 description = "Build and start an isolated local test server"
 depends = ["build"]

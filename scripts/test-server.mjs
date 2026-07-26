@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 
@@ -25,6 +26,15 @@ function isAlive(pid) {
   } catch {
     return false;
   }
+}
+
+function portAvailable(port) {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once("error", () => resolve(false));
+    probe.once("listening", () => probe.close(() => resolve(true)));
+    probe.listen(port, "0.0.0.0");
+  });
 }
 
 async function responds(port) {
@@ -53,6 +63,11 @@ async function start() {
   if (!fs.existsSync(path.join(root, ".next", "BUILD_ID"))) {
     throw new Error("Production build not found. Run `mise run build` first.");
   }
+  // Another server on this port would answer the readiness probe below and make
+  // a failed start look successful, sending test traffic at its journal.
+  if (!await portAvailable(port)) {
+    throw new Error(`Port ${port} is already in use, so the test server cannot serve ${dataDir}. Stop whatever owns the port, or set PARALOG_TEST_PORT to a free one.`);
+  }
 
   fs.mkdirSync(dataDir, { recursive: true });
   const output = fs.openSync(outputPath, "a");
@@ -77,8 +92,9 @@ async function start() {
 
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (!isAlive(child.pid)) break;
-    if (await responds(port)) {
+    if (await responds(port) && isAlive(child.pid)) {
       console.log(`Paralog test server is running at http://localhost:${port}`);
+      console.log(`Data directory: ${dataDir}`);
       console.log(`Password: ${password}`);
       return;
     }

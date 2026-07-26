@@ -3,19 +3,26 @@ import { eq } from "drizzle-orm";
 import { attachmentReferencesInMarkdown } from "@/lib/attachment-references";
 import { entryNeedsContentIndex } from "@/lib/content-index-state";
 import { db } from "@/lib/db";
-import { attachmentReferences, entries, entryContentScans, journalReferencesTable } from "@/lib/db/schema";
+import { attachmentReferences, entries, entryContentScans, entryProperties, journalReferencesTable } from "@/lib/db/schema";
 import { indexedJournalReferences } from "@/lib/entry-journal-references";
+import { frontMatterPropertyNames } from "@/lib/property-icons";
 import { discoverEntries } from "./discovery";
 
-export const ENTRY_CONTENT_INDEX_VERSION = 1;
+// Bumped to 2 so existing installs reindex and pick up front matter properties.
+export const ENTRY_CONTENT_INDEX_VERSION = 2;
 
 export function indexEntryContent(date: string, entryPath: string, content: string, stat = fs.statSync(entryPath)) {
   const attachments = attachmentReferencesInMarkdown(content);
   const references = indexedJournalReferences(content);
+  const properties = frontMatterPropertyNames(content);
   const entryUpdatedAt = stat.mtime.toISOString();
   db().transaction((transaction) => {
     transaction.delete(attachmentReferences).where(eq(attachmentReferences.entryDate, date)).run();
     transaction.delete(journalReferencesTable).where(eq(journalReferencesTable.entryDate, date)).run();
+    transaction.delete(entryProperties).where(eq(entryProperties.entryDate, date)).run();
+    for (const name of properties) {
+      transaction.insert(entryProperties).values({ entryDate: date, name }).run();
+    }
     for (const [attachmentPath, occurrences] of attachments) {
       transaction.insert(attachmentReferences).values({ attachmentPath, entryDate: date, occurrences }).run();
     }
@@ -58,6 +65,7 @@ export function syncEntryContentIndex({ force = false }: { force?: boolean } = {
     db().transaction((transaction) => {
       transaction.delete(attachmentReferences).where(eq(attachmentReferences.entryDate, date)).run();
       transaction.delete(journalReferencesTable).where(eq(journalReferencesTable.entryDate, date)).run();
+      transaction.delete(entryProperties).where(eq(entryProperties.entryDate, date)).run();
       transaction.delete(entryContentScans).where(eq(entryContentScans.entryDate, date)).run();
     });
     removed += 1;

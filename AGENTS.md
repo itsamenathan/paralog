@@ -29,7 +29,48 @@ Paralog is a single-user, self-hosted Next.js journal. The app uses the App Rout
 - `mise run dev` starts Next.js on `0.0.0.0`.
 - `mise run build` is the required verification command after code changes.
 - `mise run start` serves the production build.
+- `mise run browser -- <command>` drives the app in a real browser (see Browser testing).
 - `docker compose up --build -d` is the self-hosted deployment path.
+
+## Browser testing
+
+Use [agent-browser](https://github.com/vercel-labs/agent-browser) to drive the app in a real Chrome whenever you change the UI. It is a pinned devDependency, so run it through the task rather than a global install:
+
+```bash
+mise run browser -- <command>            # e.g. mise run browser -- snapshot -i -c
+mise run browser -- install              # once per machine: download Chrome (--with-deps on Linux)
+mise run browser -- skills get core      # version-matched usage guide; read before your first session
+```
+
+The examples below are written as bare `agent-browser` for readability; prefix each with `mise run browser --`.
+
+**Never point the browser at a server you did not start.** `mise run test:start` serves `.test-data`, but a `mise run dev` server on the same port serves the real journal in `data/`. Start the test server on a port you know is free and confirm the data directory it prints:
+
+```bash
+PARALOG_TEST_PORT=3457 mise run test:start   # prints the port, data directory, and password
+PARALOG_TEST_PORT=3457 mise run test:stop
+```
+
+Isolate the browser session per project with `AGENT_BROWSER_SESSION`, and on Linux hosts that block unprivileged user namespaces (Ubuntu 23.10+ AppArmor) pass `--args "--no-sandbox"` on the first `open`:
+
+```bash
+export AGENT_BROWSER_SESSION=paralog
+agent-browser open http://localhost:3457 --args "--no-sandbox"
+agent-browser snapshot -i -c            # interactive, compact; @eN refs
+agent-browser fill @e3 paralog          # refs go stale on any page change — re-snapshot
+agent-browser press Enter
+agent-browser wait --load networkidle
+agent-browser click ".cm-live-property-icon"   # CSS selectors work anywhere a ref does
+agent-browser eval "document.querySelectorAll('.cm-line').length"
+agent-browser screenshot shot.png
+agent-browser close
+```
+
+- **Check `agent-browser console` and `agent-browser errors` after every UI change.** React invalid-DOM-property warnings, hydration mismatches, and CodeMirror exceptions surface only there — `mise run build` and the `scripts/` tests cannot catch them.
+- `agent-browser eval` is the most direct way to assert on Live Preview internals, which the accessibility tree does not expose: computed styles, CodeMirror decoration classes, and element geometry.
+- Cover the palette and mobile requirements with `agent-browser set media dark` (and `light`) and `agent-browser set viewport 375 812 2`.
+- Prefer `snapshot` and `read` for assertions; take a screenshot when the change is genuinely visual.
+- Pass `--json` to anything you parse; human-readable output is not a stable contract.
 
 ## Storage invariants
 
@@ -53,5 +94,5 @@ Paralog is a single-user, self-hosted Next.js journal. The app uses the App Rout
 1. Read the relevant route, component, and storage code before editing.
 2. Make focused changes with `apply_patch`.
 3. Run `mise run build`.
-4. For UI changes, test both light/dark and a mobile-width viewport when possible.
+4. For UI changes, drive the running app with agent-browser (see Browser testing) and check `agent-browser console` and `agent-browser errors`. Test both light/dark and a mobile-width viewport when possible.
 5. Do not commit generated `.next/`, `node_modules/`, or local `data/` contents.
