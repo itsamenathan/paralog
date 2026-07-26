@@ -41,7 +41,7 @@ export function PropertyIconsEditor({ propertyIcons, propertyNames, onChange }: 
   return <section className="property-icons-setting" aria-labelledby="property-icons-title">
     <div><p className="eyebrow">PROPERTIES</p><h3 id="property-icons-title">Front matter icons</h3></div>
     <small>Choose the icon shown beside each front matter property your journal uses. You can also click an icon directly in the Properties panel.</small>
-    {properties.length === 0 && <p className="property-icon-empty">No front matter properties yet. Add one to an entry, or name it below.</p>}
+    {properties.length === 0 && <p className="property-icon-empty">No front matter properties yet. Add one to an entry or your new entry template, or name it below.</p>}
     <div className="property-icon-list">
       {properties.map((property) => {
         const icon = propertyIconName(propertyIcons, property);

@@ -516,6 +516,7 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 .settings .toggle-setting input { width: 17px; height: 17px; margin: 1px 0 0; accent-color: var(--button); }
 .settings .toggle-setting span { display: grid; gap: 4px; }
 .settings .toggle-setting b { font-size: 12px; }
+.settings label small code { padding: 1px 4px; border-radius: 4px; background: var(--surface); color: var(--accent); font: .92em ui-monospace, SFMono-Regular, Menlo, monospace; }
 .property-icons-setting { display: grid; gap: 11px; padding-top: 20px; border-top: 1px solid var(--line); }
 .property-icons-setting h3 { margin: 3px 0 0; font-size: 20px; }
 .property-icon-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 7px; }
