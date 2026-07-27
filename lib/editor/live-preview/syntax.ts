@@ -1,4 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
+import { normalizePropertyKey } from "../../property-icons.ts";
 import type { EditorState } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
 import { journalReferences } from "../../markdown-references.ts";
@@ -99,7 +100,7 @@ function metadataNodes(state: EditorState, ranges: readonly PreviewRange[], meta
       lineFrom: line.from,
       attributes: {
         role: number === 1 ? "start" : number === metadataEnd ? "end" : rootField ? "field" : "line",
-        property: rootField?.[2]?.toLocaleLowerCase().replace(/[^a-z0-9-]/g, "") ?? "",
+        property: rootField ? normalizePropertyKey(rootField[2]) : "",
         keyFrom: rootField ? line.from + rootField[1].length : line.from,
         separatorFrom: rootField ? line.from + rootField[1].length + rootField[2].length : line.from,
         separatorTo: rootField ? line.from + rootField[1].length + rootField[2].length + rootField[3].length : line.from,

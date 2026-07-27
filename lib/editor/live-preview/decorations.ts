@@ -6,8 +6,10 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
+import { propertyIconName } from "../../property-icons.ts";
+import { propertyIconConfig } from "./property-icons.ts";
 import { collectLivePreviewNodes, frontMatterEndLine, type LivePreviewNode, type PreviewRange } from "./syntax.ts";
-import { BulletWidget, ImageWidget, TaskCheckboxWidget } from "./widgets.ts";
+import { BulletWidget, ImageWidget, PropertyIconWidget, TaskCheckboxWidget } from "./widgets.ts";
 
 type DecorationResult = { decorations: DecorationSet; atomic: DecorationSet };
 
@@ -41,6 +43,7 @@ export function buildLivePreviewDecorations(view: EditorView): DecorationResult 
   const activeLine = view.state.doc.lineAt(selection.head).number;
   const metadataEnd = frontMatterEndLine(view.state);
   const metadataEditing = Boolean(metadataEnd && activeLine <= metadataEnd && (view.hasFocus || !selection.empty));
+  const iconConfig = view.state.facet(propertyIconConfig);
   const nodes = collectLivePreviewNodes(view.state, view.visibleRanges as readonly PreviewRange[], activeLine);
   const lineClasses = new Map<number, Set<string>>();
   const hidden: PreviewRange[] = [];
@@ -84,6 +87,12 @@ export function buildLivePreviewDecorations(view: EditorView): DecorationResult 
       if (role === "start" || role === "end") {
         addMark(node.from, node.to, `cm-live-metadata-delimiter cm-live-metadata-delimiter-${metadataEditing ? "editing" : "preview"}`);
       } else if (role === "field") {
+        if (!metadataEditing && property) {
+          decorations.push(Decoration.widget({
+            widget: new PropertyIconWidget(property, propertyIconName(iconConfig.icons, property), iconConfig.openPicker),
+            side: -1,
+          }).range(node.lineFrom));
+        }
         const keyFrom = Number(node.attributes?.keyFrom ?? node.from);
         const separatorFrom = Number(node.attributes?.separatorFrom ?? keyFrom);
         const separatorTo = Number(node.attributes?.separatorTo ?? separatorFrom);
@@ -178,7 +187,10 @@ export const livePreviewDecorations: Extension = (() => {
         const selectionEmpty = update.state.selection.main.empty;
         const selectionAffectsDecorations = update.selectionSet
           && (activeLine !== this.activeLine || selectionEmpty !== this.selectionEmpty);
-        if (update.docChanged || update.viewportChanged || update.focusChanged || selectionAffectsDecorations) {
+        // A compartment reconfigure sets none of the update flags, so the
+        // property icon config has to be compared directly.
+        const iconConfigChanged = update.state.facet(propertyIconConfig) !== update.startState.facet(propertyIconConfig);
+        if (update.docChanged || update.viewportChanged || update.focusChanged || selectionAffectsDecorations || iconConfigChanged) {
           ({ decorations: this.decorations, atomic: this.atomic } = buildLivePreviewDecorations(update.view));
           update.view.requestMeasure();
         }

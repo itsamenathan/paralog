@@ -12,6 +12,7 @@ export function livePreviewExtension(): Extension {
   ];
 }
 
+export { propertyIconConfig, type PropertyIconConfig } from "./property-icons";
 export {
   configureLivePreviewVimNavigation,
   livePreviewVerticalTarget,

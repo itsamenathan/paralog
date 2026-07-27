@@ -8,10 +8,12 @@ import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
 import { exitEmptyMarkdownBlock, keepMobileCursorVisible } from "@/lib/editor/commands";
-import { livePreviewExtension, moveLivePreviewVertically } from "@/lib/editor/live-preview";
+import { livePreviewExtension, moveLivePreviewVertically, propertyIconConfig } from "@/lib/editor/live-preview";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
+import { propertyIconName, type PropertyIcons } from "@/lib/property-icons";
 import { AttachmentPicker } from "./attachments/attachment-picker";
 import { EditorToolbar } from "./editor/editor-toolbar";
+import { PropertyIconPopover } from "./editor/property-icon-picker";
 import { SuggestionMenu, type SuggestionMenuItem } from "./editor/suggestion-menu";
 import {
   EditorView,
@@ -32,15 +34,18 @@ type LiveMarkdownEditorProps = {
   tags: ReferenceSuggestion[];
   people: ReferenceSuggestion[];
   onBeforeAttachmentNavigation: () => void;
+  propertyIcons: PropertyIcons;
+  onPropertyIconChange: (property: string, icon: string | null) => void;
 };
 
 type ReferenceSuggestion = { name: string; count: number };
 type ReferenceQuery = { kind: "tag" | "person"; query: string; from: number; to: number };
 
-export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people, onBeforeAttachmentNavigation }: LiveMarkdownEditorProps) {
+export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people, onBeforeAttachmentNavigation, propertyIcons, onPropertyIconChange }: LiveMarkdownEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const vimCompartment = useRef(new Compartment());
+  const iconCompartment = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onUploadRef = useRef(onUpload);
   const externalUpdate = useRef(false);
@@ -57,6 +62,13 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
   const [linkUrl, setLinkUrl] = useState("");
   const [pickerMode, setPickerMode] = useState<"all" | AttachmentKind | null>(null);
   const [pickerPosition, setPickerPosition] = useState<number | null>(null);
+  const [iconProperty, setIconProperty] = useState<string | null>(null);
+  // Kept stable so a reconfigure only ever fires for an actual icon change.
+  const openIconPickerRef = useRef<(property: string) => void>(() => {});
+  openIconPickerRef.current = (property) => setIconProperty(property);
+  const openIconPicker = useRef((property: string) => openIconPickerRef.current(property)).current;
+  const propertyIconsRef = useRef(propertyIcons);
+  propertyIconsRef.current = propertyIcons;
   onChangeRef.current = onChange;
   onUploadRef.current = onUpload;
 
@@ -161,6 +173,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       doc: value,
       extensions: [
         vimCompartment.current.of([]),
+        iconCompartment.current.of(propertyIconConfig.of({ icons: propertyIconsRef.current, openPicker: openIconPicker })),
         basicSetup,
         markdown({ base: markdownLanguage }),
         Prec.high(keymap.of([
@@ -235,6 +248,12 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
     desktop.addEventListener("change", configureVim);
     return () => desktop.removeEventListener("change", configureVim);
   }, [vimMode]);
+
+  useEffect(() => {
+    editor.current?.dispatch({
+      effects: iconCompartment.current.reconfigure(propertyIconConfig.of({ icons: propertyIcons, openPicker: openIconPicker })),
+    });
+  }, [propertyIcons, openIconPicker]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -432,5 +451,14 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       <button type="button" aria-label="Code selection" onClick={() => wrap("`")}>{"<>"}</button>
     </div>}
     <AttachmentPicker open={pickerMode !== null} mode={pickerMode || "all"} entryDate={entryDate} online={online} onClose={() => setPickerMode(null)} onInsert={(markdown) => insertMarkdown(markdown, pickerPosition ?? undefined)} onBeforeNavigate={onBeforeAttachmentNavigation} />
+    {iconProperty && <PropertyIconPopover
+      property={iconProperty}
+      value={propertyIconName(propertyIcons, iconProperty)}
+      canReset={iconProperty in propertyIcons}
+      anchor={() => host.current?.querySelector<HTMLElement>(`.cm-live-property-icon[data-property="${CSS.escape(iconProperty)}"]`) ?? null}
+      onSelect={(icon) => { onPropertyIconChange(iconProperty, icon); setIconProperty(null); }}
+      onReset={() => { onPropertyIconChange(iconProperty, null); setIconProperty(null); }}
+      onClose={() => setIconProperty(null)}
+    />}
   </div>;
 }

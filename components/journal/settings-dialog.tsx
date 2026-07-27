@@ -3,11 +3,14 @@
 import { useState } from "react";
 import { WidgetLayoutEditor } from "@/components/widgets/widget-layout-editor";
 import { NotificationPreferences } from "./notification-preferences";
+import { frontMatterPropertyNames } from "@/lib/property-icons";
+import { PropertyIconsEditor } from "./property-icons-editor";
 import type { JournalSettings } from "./types";
 
 export function SettingsDialog({
   settings,
   online,
+  propertyNames,
   onChange,
   onClose,
   onSave,
@@ -15,6 +18,7 @@ export function SettingsDialog({
 }: {
   settings: JournalSettings;
   online: boolean;
+  propertyNames: string[];
   onChange: (settings: JournalSettings) => void;
   onClose: () => void;
   onSave: () => void;
@@ -43,7 +47,12 @@ export function SettingsDialog({
     <section className="settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(event) => event.stopPropagation()}>
       <div className="settings-title"><div><p className="eyebrow">PREFERENCES</p><h2 id="settings-title">Journal settings</h2></div><button type="button" onClick={onClose} aria-label="Close settings">×</button></div>
       <label>Save format<small>Tokens: YYYY, MM, MMMM, DD, dddd. Existing files stay where they are.</small><input value={settings.saveFormat} onChange={(event) => onChange({ ...settings, saveFormat: event.target.value })} /></label>
-      <label>New entry template<small>Use any Markdown you want as a starting point.</small><textarea value={settings.template} onChange={(event) => onChange({ ...settings, template: event.target.value })} /></label>
+      <label>New entry template<small>Use any Markdown you want as a starting point. Open it with a <code>---</code> block to give new entries properties, like <code>mood:</code> or <code>tags:</code>.</small><textarea value={settings.template} onChange={(event) => onChange({ ...settings, template: event.target.value })} /></label>
+      <PropertyIconsEditor
+        propertyIcons={settings.propertyIcons}
+        propertyNames={[...propertyNames, ...frontMatterPropertyNames(settings.template)]}
+        onChange={(propertyIcons) => onChange({ ...settings, propertyIcons })}
+      />
       <WidgetLayoutEditor
         layout={settings.widgetLayout}
         widgetSettings={settings.widgetSettings}

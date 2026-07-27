@@ -1,4 +1,39 @@
 import { EditorView, WidgetType } from "@codemirror/view";
+import { renderPropertyIconSvg } from "../../icons/property-icon-nodes.ts";
+
+export class PropertyIconWidget extends WidgetType {
+  private property: string;
+  private icon: string;
+  private openPicker: (property: string) => void;
+
+  constructor(property: string, icon: string, openPicker: (property: string) => void) {
+    super();
+    this.property = property;
+    this.icon = icon;
+    this.openPicker = openPicker;
+  }
+  // The callback is referentially stable, so identity is fully described by the row.
+  eq(widget: PropertyIconWidget) {
+    return widget.property === this.property && widget.icon === this.icon;
+  }
+  toDOM() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "cm-live-property-icon";
+    button.dataset.property = this.property;
+    button.tabIndex = -1;
+    button.setAttribute("aria-label", `Change the ${this.property} property icon`);
+    button.append(renderPropertyIconSvg(this.icon));
+    // Front matter reverts to raw YAML once the cursor moves into it, which
+    // would remove the very row being configured.
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      this.openPicker(this.property);
+    });
+    return button;
+  }
+}
 
 export class ImageWidget extends WidgetType {
   private src: string;

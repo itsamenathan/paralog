@@ -1,6 +1,7 @@
 import type { DayActivity, DayPhoto } from "@/lib/day-activity-types";
 import type { WidgetLayout } from "@/lib/widget-layout";
 import type { WidgetSettings } from "@/lib/widget-settings";
+import type { PropertyIcons } from "@/lib/property-icons";
 import type { Memory, ReferenceSummary } from "@/components/widgets/types";
 
 export type Entry = {
@@ -28,6 +29,7 @@ export type JournalSettings = {
   template: string;
   widgetLayout: WidgetLayout;
   widgetSettings: WidgetSettings;
+  propertyIcons: PropertyIcons;
   showTagCloud: boolean;
   vimMode: boolean;
   autoSave: boolean;

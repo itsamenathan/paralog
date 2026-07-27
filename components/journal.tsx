@@ -10,6 +10,7 @@ import { entryMap, mergeCalendarEntries, type CalendarEntry } from "@/lib/calend
 import type { DayPhoto, DaySummaryActivity } from "@/lib/day-activity-types";
 import { DEFAULT_WIDGET_LAYOUT } from "@/lib/widget-layout";
 import { DEFAULT_WIDGET_SETTINGS } from "@/lib/widget-settings";
+import { frontMatterPropertyNames } from "@/lib/property-icons";
 import { ActivityWidget } from "./widgets/activity-widget";
 import { ArchiveWidget } from "./widgets/archive-widget";
 import { displayDate, fromIso, iso, monthKey } from "./widgets/date-utils";
@@ -163,6 +164,7 @@ export default function Journal() {
   const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [propertyNames, setPropertyNames] = useState<string[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showAllMemories, setShowAllMemories] = useState(false);
   const [attachmentPicker, setAttachmentPicker] = useState<"all" | "image" | null>(null);
@@ -338,6 +340,15 @@ export default function Journal() {
     fetch("/api/settings").then((response) => response.ok ? response.json() : null).then(setSettings).catch(() => undefined);
     loadReferences();
   }, [loadReferences]);
+
+  // Indexing every entry is only worth it when the settings dialog needs the list.
+  useEffect(() => {
+    if (!showSettings || !navigator.onLine) return;
+    fetch("/api/properties")
+      .then((response) => response.ok ? response.json() : null)
+      .then((value) => { if (Array.isArray(value?.properties)) setPropertyNames(value.properties); })
+      .catch(() => undefined);
+  }, [showSettings]);
 
   useEffect(() => {
     if (!settings) return;
@@ -713,6 +724,25 @@ export default function Journal() {
     if (response.ok) { setSettings(await response.json()); setShowSettings(false); }
   }
 
+  // The inline picker in the Properties panel saves on the spot, unlike the
+  // settings dialog where changes are committed by Save settings.
+  async function savePropertyIcon(property: string, icon: string | null) {
+    if (!settings) return;
+    const propertyIcons = { ...settings.propertyIcons };
+    if (icon) propertyIcons[property] = icon;
+    else delete propertyIcons[property];
+    const optimistic = { ...settings, propertyIcons };
+    setSettings(optimistic);
+    if (!navigator.onLine) return;
+    const response = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(optimistic),
+    });
+    if (response.ok) setSettings(await response.json());
+    else setSettings(settings);
+  }
+
   function navigationWidgets() {
     const layout = settings?.widgetLayout || DEFAULT_WIDGET_LAYOUT;
     return layout.navigation.map((id) => {
@@ -870,7 +900,7 @@ export default function Journal() {
           <button className="template-button" type="button" onClick={() => changeContent(entry.template)}>Start with your template →</button>
         )}
         <div className={`editor-frame ${loading ? "loading" : ""}`}>
-          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} entryDate={selected} online={online} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} onBeforeAttachmentNavigation={flushDirtyEntry} />}
+          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} entryDate={selected} online={online} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} onBeforeAttachmentNavigation={flushDirtyEntry} propertyIcons={settings?.propertyIcons ?? {}} onPropertyIconChange={savePropertyIcon} />}
         </div>
         </div>
         <aside className="entry-context-column" aria-label="Daily activity and archive memories">
@@ -892,6 +922,7 @@ export default function Journal() {
       {showSettings && settings && <SettingsDialog
         settings={settings}
         online={online}
+        propertyNames={[...new Set([...propertyNames, ...frontMatterPropertyNames(entry.content)])]}
         onChange={setSettings}
         onClose={() => setShowSettings(false)}
         onSave={persistSettings}

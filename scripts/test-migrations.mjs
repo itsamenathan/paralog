@@ -8,11 +8,13 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 const migrationsFolder = path.resolve(import.meta.dirname, "..", "drizzle");
+const migrationCount = fs.readdirSync(migrationsFolder).filter((file) => file.endsWith(".sql")).length;
 const applicationTables = [
   "attachment_references",
   "attachments",
   "entries",
   "entry_content_scans",
+  "entry_properties",
   "journal_references",
   "notification_config",
   "notification_deliveries",
@@ -37,11 +39,11 @@ test("migrations initialize a fresh database and are repeatable", () => {
   try {
     migrate(fixture.database, { migrationsFolder });
     for (const table of applicationTables) assert.ok(tableNames(fixture.sqlite).includes(table), `missing ${table}`);
-    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, 2);
+    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, migrationCount);
     assert.equal(tableNames(fixture.sqlite).includes("attachment_entry_scans"), false);
 
     migrate(fixture.database, { migrationsFolder });
-    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, 2);
+    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, migrationCount);
   } finally {
     fixture.sqlite.close();
     fs.rmSync(fixture.directory, { recursive: true, force: true });
@@ -77,7 +79,7 @@ test("the baseline adopts a legacy database without losing data", () => {
     assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM push_subscriptions").get().count, 1);
     assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM notification_deliveries").get().count, 1);
     assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM notification_suppressions").get().count, 1);
-    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, 2);
+    assert.equal(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations").get().count, migrationCount);
     assert.equal(tableNames(fixture.sqlite).includes("attachment_entry_scans"), false);
   } finally {
     fixture.sqlite.close();
