@@ -9,6 +9,9 @@ import {
 
 const paragraph = "Started the morning with coffee and a short review of the last few entries before opening the laptop. The pattern is obvious: I write better when I stop trying to summarize the whole week in one sitting.";
 const documentText = `${paragraph}\n\nNext logical line.\n\n## Heading with **bold**, *italic*, ~~strike~~, \`code\`, and [link](https://example.com)\n\n> Quoted line\n- [x] Finished task\n- Bullet item\n`;
+// Front matter is part of the fixture because its rendered rows are what pull
+// CodeMirror's own vertical motion off the adjacent line further down the entry.
+const listDocument = `---\nlocation: "Erie, Colorado, United States"\nweight: 221\n---\n\n## Today\n\n- Tightened the demo outline for #work.\n- Booked time with @alex to review the August plan.\n- Added a realistic grocery list instead of another vague note to eat better.\n`;
 const primaryDate = (browserName: string) => browserName === "webkit" ? "2098-01-02" : "2098-01-01";
 
 test.beforeEach(async ({ page, browserName }) => {
@@ -145,6 +148,18 @@ test("preserves Vim logical-line and visual-row movement", async ({ page, browse
     markdown = await sourceValue(page);
     expect(markdown.split("\n")[0]).toContain("X");
     expect(markdown.split("\n")[1]).toBe("");
+
+    // Vim owns the arrow keys in normal mode, where they must land on the
+    // adjacent logical line instead of stepping over neighbours whose Markdown
+    // markers Live Preview replaced with a widget.
+    await seedEntry(page, browserName === "webkit" ? "2098-01-14" : "2098-01-13", listDocument);
+    await page.locator(".cm-line").filter({ hasText: "Added a realistic" }).first().click({ position: { x: 90, y: 8 } });
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("i");
+    await page.keyboard.type("X");
+    markdown = await sourceValue(page);
+    expect(markdown.split("\n").findIndex((line) => line.includes("X"))).toBe(8);
   } finally {
     await page.request.put("/api/settings", { data: { vimMode: false } });
   }

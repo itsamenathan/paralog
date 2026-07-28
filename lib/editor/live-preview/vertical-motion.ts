@@ -1,6 +1,6 @@
 import { EditorSelection, type SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { Vim } from "@replit/codemirror-vim";
+import { Vim, type MotionFn } from "@replit/codemirror-vim";
 
 const imageMarkdown = /!\[[^\]]*\]\([^)]+\)/;
 let vimNavigationConfigured = false;
@@ -55,27 +55,60 @@ export function moveLivePreviewVertically(view: EditorView, direction: -1 | 1, e
   return true;
 }
 
+// Vim keeps the column a vertical run started from, so passing over a short line
+// does not drag the cursor left for the rest of the run. Motion identity is the
+// only signal Vim exposes, so the memory spans the motions defined here.
+const verticalMotions = new Set<MotionFn>();
+
+function goalColumn(vim: Parameters<MotionFn>[3], column: number) {
+  if (vim.lastMotion && verticalMotions.has(vim.lastMotion)) return vim.lastHPos;
+  vim.lastHPos = column;
+  return column;
+}
+
+const moveByLines: MotionFn = (cm, head, args, vim) => {
+  const repeat = args.repeat + (args.repeatOffset ?? 0);
+  const line = Math.max(cm.firstLine(), Math.min(cm.lastLine(), head.line + (args.forward ? repeat : -repeat)));
+  if (args.toFirstChar) vim.lastHPos = Math.max(0, cm.getLine(line).search(/\S/));
+  return cm.clipPos({ line, ch: args.toFirstChar ? vim.lastHPos : goalColumn(vim, head.ch) });
+};
+
+const moveByDisplayLines: MotionFn = (cm, head, args, vim) => {
+  let range = EditorSelection.cursor(cm.indexFromPos(head));
+  for (let count = 0; count < args.repeat; count += 1) {
+    const target = livePreviewVerticalTarget(cm.cm6, range, args.forward ? 1 : -1);
+    if (target.head === range.head) break;
+    range = EditorSelection.cursor(target.head, 1, undefined, range.goalColumn);
+  }
+  const position = cm.posFromIndex(range.head);
+  vim.lastHPos = position.ch;
+  return position;
+};
+
 export function configureLivePreviewVimNavigation() {
   if (vimNavigationConfigured) return;
   vimNavigationConfigured = true;
 
-  Vim.defineMotion("paralogMoveByLines", (cm, head, args) => {
-    const line = Math.max(cm.firstLine(), Math.min(cm.lastLine(), head.line + (args.forward ? args.repeat : -args.repeat)));
-    return cm.clipPos({ line, ch: head.ch });
-  });
-  Vim.defineMotion("paralogMoveByDisplayLines", (cm, head, args) => {
-    let range = EditorSelection.cursor(cm.indexFromPos(head));
-    for (let count = 0; count < args.repeat; count += 1) {
-      const target = livePreviewVerticalTarget(cm.cm6, range, args.forward ? 1 : -1);
-      if (target.head === range.head) break;
-      range = EditorSelection.cursor(target.head, 1, undefined, range.goalColumn);
-    }
-    return cm.posFromIndex(range.head);
-  });
-  for (const [keys, motion, forward] of [
-    ["j", "paralogMoveByLines", true],
-    ["k", "paralogMoveByLines", false],
-    ["gj", "paralogMoveByDisplayLines", true],
-    ["gk", "paralogMoveByDisplayLines", false],
-  ] as const) Vim.mapCommand(keys, "motion", motion, { forward }, {});
+  verticalMotions.add(moveByLines).add(moveByDisplayLines);
+  Vim.defineMotion("paralogMoveByLines", moveByLines);
+  Vim.defineMotion("paralogMoveByDisplayLines", moveByDisplayLines);
+
+  // Vim expands the arrow keys into `j`/`k` as a non-remappable alias, which
+  // resolves to its own motion no matter what `j` and `k` are mapped to. That
+  // motion follows visual geometry and steps clean over logical lines whose
+  // Markdown markers Live Preview replaced with an atomic widget, so every key
+  // that moves by a logical line has to be mapped on its own.
+  for (const [keys, motion, args] of [
+    ["j", "paralogMoveByLines", { forward: true, linewise: true }],
+    ["k", "paralogMoveByLines", { forward: false, linewise: true }],
+    ["<Down>", "paralogMoveByLines", { forward: true, linewise: true }],
+    ["<Up>", "paralogMoveByLines", { forward: false, linewise: true }],
+    ["+", "paralogMoveByLines", { forward: true, toFirstChar: true }],
+    ["-", "paralogMoveByLines", { forward: false, toFirstChar: true }],
+    ["_", "paralogMoveByLines", { forward: true, toFirstChar: true, repeatOffset: -1 }],
+    ["gj", "paralogMoveByDisplayLines", { forward: true }],
+    ["gk", "paralogMoveByDisplayLines", { forward: false }],
+    ["g<Down>", "paralogMoveByDisplayLines", { forward: true }],
+    ["g<Up>", "paralogMoveByDisplayLines", { forward: false }],
+  ] as const) Vim.mapCommand(keys, "motion", motion, args, {});
 }
