@@ -341,13 +341,19 @@ export default function Journal() {
       // are the newest copy of the entry: the fetch answers a question asked
       // before they existed.
       const typed = dirtyRef.current && date === selectedRef.current ? entryRef.current.content : null;
-      const unsaved = typed ?? (pending?.pending ? pending.content : null);
-      const next = unsaved === null
+      // A save that succeeded leaves the newest text cached locally with nothing
+      // pending, and it never refreshes what the service worker stored. An offline
+      // copy therefore describes a visit no later than the local one, so the local
+      // entry is kept whether or not it still has writing waiting to be sent.
+      const localContent = typed ?? (pending && (pending.pending || offline) ? pending.content : null);
+      const localExists = typed === null ? pending?.exists : entryRef.current.exists;
+      const unsaved = typed !== null || Boolean(pending?.pending);
+      const next = localContent === null
         ? remote
-        : { ...remote, content: unsaved, exists: Boolean(unsaved.trim()) || remote.exists };
-      cacheEntry(date, next, unsaved !== null);
+        : { ...remote, content: localContent, exists: Boolean(localContent.trim()) || localExists || remote.exists };
+      cacheEntry(date, next, unsaved);
       setEntry(next);
-      setSaveState(offline ? "offline" : unsaved === null ? "saved" : "unsaved");
+      setSaveState(offline ? "offline" : unsaved ? "unsaved" : "saved");
     } catch {
       if (!cached) setSaveState("offline");
     } finally {
