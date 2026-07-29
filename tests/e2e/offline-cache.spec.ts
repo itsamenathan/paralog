@@ -1,5 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { authenticate, seedEntry, sourceValue } from "./editor-fixtures";
+
+// A click dispatched before the surrounding layout settles takes no focus, and
+// the typing that follows would go nowhere instead of reaching the entry, so the
+// click is retried until the editor reports focus.
+async function clickAndFocus(page: Page, target: Locator) {
+  await expect(async () => {
+    await target.click();
+    await expect(page.locator(".live-editor-host .cm-editor")).toHaveClass(/cm-focused/, { timeout: 500 });
+  }).toPass({ timeout: 10_000 });
+}
 
 const paragraph = "Started the morning with coffee and a short review of the last few entries before opening the laptop.";
 const documentText = `${paragraph}\n\nSecond paragraph about the afternoon.\n`;
@@ -12,7 +22,7 @@ test("keeps new writing when a failed request is answered from the offline cache
   await seedEntry(page, date, documentText);
 
   const autosaved = page.waitForResponse((response) => response.url().includes(`/api/entries?date=${date}`) && response.request().method() === "PUT");
-  await page.locator(".cm-line").last().click();
+  await clickAndFocus(page, page.locator(".cm-line").last());
   await page.keyboard.type("Then the afternoon got away from me.");
   await autosaved;
   await expect(page.locator(".save-control")).toHaveText("Saved");
