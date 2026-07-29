@@ -63,3 +63,35 @@ test("keeps the cursor in place when reconnecting re-reads the saved entry", asy
   await page.keyboard.type("!");
   expect(await sourceValue(page)).toContain("Wrote it down.!");
 });
+
+test("a save answered after moving on leaves the newly opened day alone", async ({ page, browserName }) => {
+  const left = syncDate(browserName);
+  // Hold the save for the day being left so that it is answered only once the
+  // next day is open and settled.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let holding = 0;
+  await page.route(`**/api/entries?date=${left}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    holding += 1;
+    await held;
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable" }) });
+  });
+
+  await clickAndFocus(page, page.locator(".cm-line").last());
+  await page.keyboard.type("One more line before bed.");
+  await expect.poll(() => holding).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Next day" }).click();
+  await expect(page.locator(".live-editor-host .cm-editor")).toBeVisible();
+  await expect(page.locator(".save-control")).toHaveText("Saved");
+
+  const answered = page.waitForResponse((response) => response.url().includes(`/api/entries?date=${left}`) && response.request().method() === "PUT" && response.status() === 503);
+  release();
+  await answered;
+  await page.waitForTimeout(400);
+
+  // The response describes the day that was left behind. Reading the open day
+  // from the render the save started in would report its failure here instead.
+  await expect(page.locator(".save-control")).toHaveText("Saved");
+});

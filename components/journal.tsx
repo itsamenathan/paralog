@@ -264,13 +264,16 @@ export default function Journal() {
   const persistEntry = useCallback(async (date: string, content: string, current: Entry) => {
     const draft = { ...current, content, exists: Boolean(content.trim()) || current.exists };
     cacheEntry(date, draft, true);
-    if (date === selected) setSaveState(navigator.onLine ? "saving" : "offline");
+    // Which day is open is read from the ref rather than the render this callback
+    // was created in: a save started on one day can outlive it, and a response
+    // that arrives after navigating away describes a day nobody is looking at.
+    if (date === selectedRef.current) setSaveState(navigator.onLine ? "saving" : "offline");
     setDayWords((days) => ({ ...days, [date]: journalWordCount(content) }));
 
     if (!navigator.onLine) return false;
     // Background syncs save other days too; only the open entry describes what the
     // server holds for the entry this comparison protects.
-    if (date === selected) serverContentRef.current = content;
+    if (date === selectedRef.current) serverContentRef.current = content;
     try {
       const response = await fetch(`/api/entries?date=${date}`, {
         method: "PUT",
@@ -279,7 +282,7 @@ export default function Journal() {
       });
       if (!response.ok) throw new Error("Save failed");
       cacheEntry(date, draft, false);
-      if (date === selected) {
+      if (date === selectedRef.current) {
         setEntry((value) => ({ ...value, exists: true }));
         setRemoteUpdate(null);
         // Keystrokes made while the request was in flight are still unsaved, and
@@ -292,10 +295,10 @@ export default function Journal() {
       }
       return true;
     } catch {
-      if (date === selected) setSaveState("offline");
+      if (date === selectedRef.current) setSaveState("offline");
       return false;
     }
-  }, [selected]);
+  }, []);
 
   const flushDirtyEntry = useCallback(() => {
     if (!dirtyRef.current) return;
