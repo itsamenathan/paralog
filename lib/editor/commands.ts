@@ -17,6 +17,19 @@ export function exitEmptyMarkdownBlock({
   return true;
 }
 
+// Rewriting the whole document maps every cursor onto the start of the change,
+// which drops the writer at the top of the entry. Synchronizing an entry loaded
+// from elsewhere therefore only replaces the span that actually differs, so the
+// cursor and scroll position survive updates that land while the user is typing.
+export function externalDocumentChange(current: string, next: string) {
+  const shortest = Math.min(current.length, next.length);
+  let from = 0;
+  while (from < shortest && current[from] === next[from]) from += 1;
+  let tail = 0;
+  while (tail < shortest - from && current[current.length - 1 - tail] === next[next.length - 1 - tail]) tail += 1;
+  return { from, to: current.length - tail, insert: next.slice(from, next.length - tail) };
+}
+
 export function keepMobileCursorVisible(view: EditorView) {
   const viewport = window.visualViewport;
   if (!viewport || window.innerWidth > 720 || !view.hasFocus) return;

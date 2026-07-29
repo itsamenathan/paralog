@@ -4,7 +4,7 @@ import test from "node:test";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import { entryMap, mergeCalendarEntries } from "../lib/calendar-entries.ts";
-import { exitEmptyMarkdownBlock } from "../lib/editor/commands.ts";
+import { exitEmptyMarkdownBlock, externalDocumentChange } from "../lib/editor/commands.ts";
 import { addNonOverlappingPreviewRange } from "../lib/editor/live-preview/decorations.ts";
 import { mapPointerAnchor } from "../lib/editor/live-preview/dom-position.ts";
 import { collectLivePreviewNodes, frontMatterEndLine } from "../lib/editor/live-preview/syntax.ts";
@@ -314,6 +314,37 @@ test("pressing Enter preserves non-empty Markdown blocks", () => {
   let dispatched = false;
   assert.equal(exitEmptyMarkdownBlock({ state: editorState("- keep writing"), dispatch: () => { dispatched = true; } }), false);
   assert.equal(dispatched, false);
+});
+
+function synchronizedSelection(current, next, anchor) {
+  const state = EditorState.create({ doc: current, selection: { anchor } });
+  const transaction = state.update({ changes: externalDocumentChange(current, next) });
+  assert.equal(transaction.state.doc.toString(), next);
+  return transaction.state.selection.main.head;
+}
+
+test("an entry loaded from elsewhere keeps the cursor where the writer left it", () => {
+  const entry = "# Tuesday\n\nWrote about the walk home.";
+  const middle = entry.indexOf("walk");
+  // Saved entries always end with a newline the editor buffer lacks, so this is
+  // what a re-read of the entry the writer just saved looks like.
+  assert.equal(synchronizedSelection(entry, `${entry}\n`, middle), middle);
+  assert.equal(synchronizedSelection(entry, `${entry}\n`, entry.length), entry.length);
+  // An edit that lands above the cursor carries it along instead of dropping it.
+  assert.equal(synchronizedSelection(entry, entry.replace("Tuesday", "Wednesday"), middle), middle + 2);
+  assert.equal(synchronizedSelection(entry, entry.replace("# Tuesday\n\n", ""), middle), middle - 11);
+  // Rewriting the whole document, which is what this replaces, drops the cursor
+  // at the top of the entry instead.
+  const state = EditorState.create({ doc: entry, selection: { anchor: middle } });
+  assert.equal(state.update({ changes: { from: 0, to: entry.length, insert: `${entry}\n` } }).state.selection.main.head, 0);
+});
+
+test("synchronizing an entry rewrites only the span that differs", () => {
+  assert.deepEqual(externalDocumentChange("Morning pages.", "Morning pages.\n"), { from: 14, to: 14, insert: "\n" });
+  assert.deepEqual(externalDocumentChange("Morning pages.\n", "Morning pages."), { from: 14, to: 15, insert: "" });
+  assert.deepEqual(externalDocumentChange("", "First words."), { from: 0, to: 0, insert: "First words." });
+  assert.deepEqual(externalDocumentChange("Draft.", ""), { from: 0, to: 6, insert: "" });
+  assert.deepEqual(externalDocumentChange("a note", "the note"), { from: 0, to: 1, insert: "the" });
 });
 
 function verticalNavigationView(text, head, movedHead, coordinateHead) {

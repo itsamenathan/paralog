@@ -7,7 +7,7 @@ import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
-import { exitEmptyMarkdownBlock, keepMobileCursorVisible } from "@/lib/editor/commands";
+import { exitEmptyMarkdownBlock, externalDocumentChange, keepMobileCursorVisible } from "@/lib/editor/commands";
 import { livePreviewExtension, moveLivePreviewVertically, propertyIconConfig } from "@/lib/editor/live-preview";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
 import { propertyIconName, type PropertyIcons } from "@/lib/property-icons";
@@ -271,9 +271,11 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
 
   useEffect(() => {
     const view = editor.current;
-    if (!view || view.state.doc.toString() === value) return;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current === value) return;
     externalUpdate.current = true;
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+    view.dispatch({ changes: externalDocumentChange(current, value), scrollIntoView: false });
     externalUpdate.current = false;
   }, [value]);
 
