@@ -28,6 +28,22 @@ export async function sourceValue(page: Page) {
   return value;
 }
 
+// Clicking at a point measured earlier can miss. The entry is re-seeded between
+// passes, and on a loaded machine the surrounding layout can still be settling
+// when the click is dispatched. A missed click leaves the editor unfocused and
+// silently drops whatever is typed next, which surfaces much later as a
+// confusing assertion about text that never arrived. Re-measuring the point and
+// retrying until the editor holds focus keeps that from being a coin flip.
+export async function clickInEditor(page: Page, point: () => Promise<{ x: number; y: number }>) {
+  await expect(async () => {
+    const { x, y } = await point();
+    await page.mouse.click(x, y);
+    // Short, so a miss is retried against freshly measured coordinates rather
+    // than spending the whole budget waiting on the click that already missed.
+    await expect(page.locator(".live-editor-host .cm-editor")).toHaveClass(/cm-focused/, { timeout: 500 });
+  }).toPass({ timeout: 10_000 });
+}
+
 export async function lineTextRects(page: Page, startsWith: string) {
   return page.locator(".cm-line").evaluateAll((lines, prefix) => {
     const line = lines.find((candidate) => candidate.textContent?.startsWith(prefix));
