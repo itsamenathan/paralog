@@ -1,5 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { authenticate, seedEntry, sourceValue } from "./editor-fixtures";
+
+// A click dispatched before the surrounding layout settles takes no focus, and
+// the typing that follows would go nowhere instead of reaching the entry, so the
+// click is retried until the editor reports focus.
+async function clickAndFocus(page: Page, target: Locator) {
+  await expect(async () => {
+    await target.click();
+    await expect(page.locator(".live-editor-host .cm-editor")).toHaveClass(/cm-focused/, { timeout: 500 });
+  }).toPass({ timeout: 10_000 });
+}
 
 const paragraph = "Started the morning with coffee and a short review of the last few entries before opening the laptop. The pattern is obvious: I write better when I stop trying to summarize the whole week in one sitting.";
 const documentText = `${paragraph}\n\nSecond paragraph about the afternoon.\n\nThird paragraph about the evening.\n`;
@@ -12,7 +22,7 @@ test.beforeEach(async ({ page, browserName }) => {
 });
 
 test("keeps the cursor in place when a remote change is applied", async ({ page, browserName }) => {
-  await page.locator(".cm-line").filter({ hasText: "Third paragraph about the evening." }).first().click();
+  await clickAndFocus(page, page.locator(".cm-line").filter({ hasText: "Third paragraph about the evening." }).first());
   await page.keyboard.press("End");
 
   await page.request.put(`/api/entries?date=${syncDate(browserName)}`, {
@@ -29,7 +39,7 @@ test("keeps the cursor in place when reconnecting re-reads the saved entry", asy
   // cursor sits at the end of the last line, so a re-read of an entry the user
   // just saved arrives as a change that is invisible on screen.
   const autosaved = page.waitForResponse((response) => response.url().includes(`/api/entries?date=${syncDate(browserName)}`) && response.request().method() === "PUT");
-  await page.locator(".cm-line").last().click();
+  await clickAndFocus(page, page.locator(".cm-line").last());
   await page.keyboard.type("Wrote it down.");
   await autosaved;
   await expect(page.locator(".save-control")).toHaveText("Saved");
@@ -41,7 +51,7 @@ test("keeps the cursor in place when reconnecting re-reads the saved entry", asy
   await page.getByRole("button", { name: "Previous day" }).click();
   await expect(page.locator(".cm-line").filter({ hasText: "Wrote it down." }).first()).toBeVisible();
 
-  await page.locator(".cm-line").filter({ hasText: "Wrote it down." }).first().click();
+  await clickAndFocus(page, page.locator(".cm-line").filter({ hasText: "Wrote it down." }).first());
   await page.keyboard.press("End");
   const reread = page.waitForResponse((response) => response.url().includes(`/api/entries?date=${syncDate(browserName)}`) && response.request().method() === "GET");
   await context.setOffline(false);
