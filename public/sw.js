@@ -1,6 +1,7 @@
 const SHELL_CACHE = "paralog-shell-v6";
 const RUNTIME_CACHE = "paralog-runtime-v6";
 const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/notification-badge.png"];
+const OFFLINE_HEADER = "X-Paralog-Offline";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -48,6 +49,17 @@ self.addEventListener("notificationclick", (event) => {
   }));
 });
 
+// A cached copy keeps the journal readable offline, but it describes an earlier
+// visit rather than what the server holds now. The marker lets the app tell the
+// two apart, so a single failed request cannot pass an old entry off as the
+// current one and replace newer writing with it.
+function offlineFallback(response) {
+  if (!response) return null;
+  const headers = new Headers(response.headers);
+  headers.set(OFFLINE_HEADER, "1");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 async function networkFirst(request, fallback) {
   const cache = await caches.open(RUNTIME_CACHE);
   try {
@@ -61,7 +73,8 @@ async function networkFirst(request, fallback) {
     }
     return response;
   } catch {
-    return (await cache.match(request)) || (await caches.match(fallback || request)) || Response.error();
+    const cached = (await cache.match(request)) || (await caches.match(fallback || request));
+    return offlineFallback(cached) || Response.error();
   }
 }
 

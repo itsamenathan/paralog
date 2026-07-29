@@ -75,6 +75,8 @@ const parseIso = (value: string | null) => {
   return iso(date) === value ? date : null;
 };
 const storedMarkdown = (content: string) => content.endsWith("\n") ? content : `${content}\n`;
+// Set by the service worker on a cached copy served because the network failed.
+const OFFLINE_RESPONSE = "X-Paralog-Offline";
 
 function keepSourceCursorVisible(textarea: HTMLTextAreaElement) {
   const viewport = window.visualViewport;
@@ -228,7 +230,10 @@ export default function Journal() {
     if (!navigator.onLine) return;
     try {
       const response = await fetch(`/api/entries?date=${date}`, { cache: "no-store" });
-      if (!response.ok) return;
+      // A failed request is answered from the offline cache, which describes an
+      // earlier visit. Synchronizing the open entry from it would replace newer
+      // writing with an older copy of itself.
+      if (!response.ok || response.headers.has(OFFLINE_RESPONSE)) return;
       applyRemoteEntry(date, await response.json());
     } catch {
       // Regular offline handling owns the connection state.
@@ -326,8 +331,11 @@ export default function Journal() {
     try {
       const response = await fetch(`/api/entries?date=${date}`, { signal });
       if (!response.ok) return;
+      // An offline copy still opens the day, but nothing about it describes what
+      // the server holds, so later comparisons must not be measured against it.
+      const offline = response.headers.has(OFFLINE_RESPONSE);
       const remote: Entry = await response.json();
-      serverContentRef.current = remote.content;
+      if (!offline) serverContentRef.current = remote.content;
       const pending = readCachedEntry(date);
       // Writing can begin before the day finishes loading, and those keystrokes
       // are the newest copy of the entry: the fetch answers a question asked
@@ -339,7 +347,7 @@ export default function Journal() {
         : { ...remote, content: unsaved, exists: Boolean(unsaved.trim()) || remote.exists };
       cacheEntry(date, next, unsaved !== null);
       setEntry(next);
-      setSaveState(unsaved === null ? "saved" : "unsaved");
+      setSaveState(offline ? "offline" : unsaved === null ? "saved" : "unsaved");
     } catch {
       if (!cached) setSaveState("offline");
     } finally {
