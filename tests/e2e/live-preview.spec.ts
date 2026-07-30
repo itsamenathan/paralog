@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   authenticate,
+  clickInEditor,
   lineTextRects,
   pointAtTextOffset,
   seedEntry,
@@ -21,14 +22,18 @@ test.beforeEach(async ({ page, browserName }) => {
 });
 
 test("maps every wrapped row and trailing whitespace to the paragraph", async ({ page, browserName }) => {
-  const rects = await lineTextRects(page, "Started the morning");
-  expect(rects.length).toBeGreaterThanOrEqual(3);
+  const rowCount = (await lineTextRects(page, "Started the morning")).length;
+  expect(rowCount).toBeGreaterThanOrEqual(3);
 
-  for (let row = 0; row < rects.length; row += 1) {
-    const rect = rects[row];
-    const x = row === rects.length - 1 ? Math.min(rect.right + 220, 490) : rect.left + rect.width * 0.65;
-    const y = rect.top + rect.height / 2;
-    await page.mouse.click(x, y);
+  for (let row = 0; row < rowCount; row += 1) {
+    await clickInEditor(page, async () => {
+      const rects = await lineTextRects(page, "Started the morning");
+      const rect = rects[row];
+      return {
+        x: row === rects.length - 1 ? Math.min(rect.right + 220, 490) : rect.left + rect.width * 0.65,
+        y: rect.top + rect.height / 2,
+      };
+    });
     await page.keyboard.type("X");
     const markdown = await sourceValue(page);
     const paragraphLine = markdown.split("\n")[0];
@@ -106,8 +111,7 @@ test("keeps vertical movement and image reflow on the intended document lines", 
   await seedEntry(page, browserName === "webkit" ? "2098-01-06" : "2098-01-05", imageDocument);
   await expect(page.locator(".cm-live-image img")).toHaveJSProperty("complete", true);
 
-  const firstRowPoint = await pointAtTextOffset(page, "Started the morning", 16);
-  await page.mouse.click(firstRowPoint.x, firstRowPoint.y);
+  await clickInEditor(page, () => pointAtTextOffset(page, "Started the morning", 16));
   await page.keyboard.press("ArrowDown");
   await page.keyboard.type("X");
   let markdown = await sourceValue(page);
@@ -115,8 +119,7 @@ test("keeps vertical movement and image reflow on the intended document lines", 
   expect(markdown.split("\n")[1]).toBe("");
 
   await seedEntry(page, browserName === "webkit" ? "2098-01-08" : "2098-01-07", imageDocument);
-  const afterImage = await pointAtTextOffset(page, "After the image", 6);
-  await page.mouse.click(afterImage.x, afterImage.y);
+  await clickInEditor(page, () => pointAtTextOffset(page, "After the image", 6));
   await page.keyboard.type("X");
   markdown = await sourceValue(page);
   expect(markdown.split("\n").find((line) => line.includes("After"))).toBe("After Xthe image.");
@@ -128,8 +131,7 @@ test("preserves Vim logical-line and visual-row movement", async ({ page, browse
   try {
     await seedEntry(page, browserName === "webkit" ? "2098-01-10" : "2098-01-09", documentText);
     await expect(page.locator(".cm-vim-panel")).toBeVisible();
-    const start = await pointAtTextOffset(page, "Started the morning", 5);
-    await page.mouse.click(start.x, start.y);
+    await clickInEditor(page, () => pointAtTextOffset(page, "Started the morning", 5));
     await page.keyboard.press("Escape");
     await page.keyboard.press("j");
     await page.keyboard.press("i");
@@ -138,8 +140,7 @@ test("preserves Vim logical-line and visual-row movement", async ({ page, browse
     expect(markdown.split("\n")[1]).toBe("X");
 
     await seedEntry(page, browserName === "webkit" ? "2098-01-12" : "2098-01-11", documentText);
-    const resetStart = await pointAtTextOffset(page, "Started the morning", 5);
-    await page.mouse.click(resetStart.x, resetStart.y);
+    await clickInEditor(page, () => pointAtTextOffset(page, "Started the morning", 5));
     await page.keyboard.press("Escape");
     await page.keyboard.press("g");
     await page.keyboard.press("j");
