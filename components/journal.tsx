@@ -206,6 +206,15 @@ export default function Journal() {
   const applyRemoteEntry = useCallback((date: string, remote: Entry) => {
     if (date !== selectedRef.current || (serverContentRef.current !== null && storedMarkdown(remote.content) === storedMarkdown(serverContentRef.current))) return;
     serverContentRef.current = remote.content;
+    // A remote copy that already matches the open entry only carries fresh
+    // metadata. Entries are stored with a trailing newline the editor buffer lacks
+    // while the cursor sits at the end of the last line, so re-reading an entry the
+    // user just saved looks like a change here without differing on screen, and
+    // handing that text back to the editor would move the cursor.
+    if (storedMarkdown(remote.content) === storedMarkdown(entryRef.current.content)) {
+      setEntry((current) => ({ ...remote, content: current.content }));
+      return;
+    }
     if (dirtyRef.current || ["saving", "unsaved", "offline"].includes(saveStateRef.current)) {
       setRemoteUpdate(remote);
       return;
@@ -255,11 +264,16 @@ export default function Journal() {
   const persistEntry = useCallback(async (date: string, content: string, current: Entry) => {
     const draft = { ...current, content, exists: Boolean(content.trim()) || current.exists };
     cacheEntry(date, draft, true);
-    if (date === selected) setSaveState(navigator.onLine ? "saving" : "offline");
+    // Which day is open is read from the ref rather than the render this callback
+    // was created in: a save started on one day can outlive it, and a response
+    // that arrives after navigating away describes a day nobody is looking at.
+    if (date === selectedRef.current) setSaveState(navigator.onLine ? "saving" : "offline");
     setDayWords((days) => ({ ...days, [date]: journalWordCount(content) }));
 
     if (!navigator.onLine) return false;
-    serverContentRef.current = content;
+    // Background syncs save other days too; only the open entry describes what the
+    // server holds for the entry this comparison protects.
+    if (date === selectedRef.current) serverContentRef.current = content;
     try {
       const response = await fetch(`/api/entries?date=${date}`, {
         method: "PUT",
@@ -268,18 +282,23 @@ export default function Journal() {
       });
       if (!response.ok) throw new Error("Save failed");
       cacheEntry(date, draft, false);
-      if (date === selected) {
+      if (date === selectedRef.current) {
         setEntry((value) => ({ ...value, exists: true }));
-        setSaveState("saved");
-        setDirty(false);
         setRemoteUpdate(null);
+        // Keystrokes made while the request was in flight are still unsaved, and
+        // clearing the flag for them would drop them from the next autosave.
+        if (entryRef.current.content === content) {
+          setSaveState("saved");
+          dirtyRef.current = false;
+          setDirty(false);
+        }
       }
       return true;
     } catch {
-      if (date === selected) setSaveState("offline");
+      if (date === selectedRef.current) setSaveState("offline");
       return false;
     }
-  }, [selected]);
+  }, []);
 
   const flushDirtyEntry = useCallback(() => {
     if (!dirtyRef.current) return;
@@ -310,12 +329,17 @@ export default function Journal() {
       const remote: Entry = await response.json();
       serverContentRef.current = remote.content;
       const pending = readCachedEntry(date);
-      const next = pending?.pending
-        ? { ...remote, content: pending.content, exists: pending.exists || remote.exists }
-        : remote;
-      cacheEntry(date, next, Boolean(pending?.pending));
+      // Writing can begin before the day finishes loading, and those keystrokes
+      // are the newest copy of the entry: the fetch answers a question asked
+      // before they existed.
+      const typed = dirtyRef.current && date === selectedRef.current ? entryRef.current.content : null;
+      const unsaved = typed ?? (pending?.pending ? pending.content : null);
+      const next = unsaved === null
+        ? remote
+        : { ...remote, content: unsaved, exists: Boolean(unsaved.trim()) || remote.exists };
+      cacheEntry(date, next, unsaved !== null);
       setEntry(next);
-      setSaveState(pending?.pending ? "unsaved" : "saved");
+      setSaveState(unsaved === null ? "saved" : "unsaved");
     } catch {
       if (!cached) setSaveState("offline");
     } finally {
@@ -615,6 +639,10 @@ export default function Journal() {
       && content.trim()
       && !autoLocationAttemptedRef.current.has(selectedRef.current),
     );
+    // Requests in flight are answered from these refs, and React renders too late
+    // to tell them a keystroke has already happened.
+    entryRef.current = { ...entryRef.current, content };
+    dirtyRef.current = true;
     setEntry((current) => ({ ...current, content }));
     setDirty(true);
     setSaveState("unsaved");
