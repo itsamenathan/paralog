@@ -9,7 +9,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { highlightSelectionMatches, openSearchPanel, searchKeymap } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
-import { capitalizeFirstListItemCharacter, continueMarkdownList, exitEmptyMarkdownBlock, externalDocumentChange, keepMobileCursorVisible } from "@/lib/editor/commands";
+import { continueMarkdownList, exitEmptyMarkdownBlock, externalDocumentChange, keepMobileCursorVisible } from "@/lib/editor/commands";
 import { livePreviewExtension, moveLivePreviewVertically, propertyIconConfig } from "@/lib/editor/live-preview";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
 import { propertyIconName, type PropertyIcons } from "@/lib/property-icons";
@@ -235,7 +235,6 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
           autocorrect: "on",
           autocapitalize: "sentences",
         }),
-        EditorState.transactionFilter.of(capitalizeFirstListItemCharacter),
         placeholder("What’s on your mind?"),
         scrollPastEnd(),
         livePreviewExtension(),
