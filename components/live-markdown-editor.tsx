@@ -184,7 +184,10 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
           { key: "Shift-Tab", run: indentLess },
         ])),
         EditorView.lineWrapping,
-        EditorView.contentAttributes.of({ spellcheck: "true" }),
+        EditorView.contentAttributes.of({
+          spellcheck: "true",
+          autocapitalize: "sentences",
+        }),
         placeholder("What’s on your mind?"),
         livePreviewExtension(),
         Prec.high(editorEvents),
