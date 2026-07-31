@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { basicSetup } from "codemirror";
+import { closeBrackets, autocompletion, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
+import { defaultKeymap, history, historyKeymap, indentLess, indentMore, redo, undo } from "@codemirror/commands";
+import { bracketMatching, defaultHighlightStyle, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import { lintKeymap } from "@codemirror/lint";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Compartment, EditorState, Prec } from "@codemirror/state";
-import { indentLess, indentMore, redo, undo } from "@codemirror/commands";
-import { openSearchPanel } from "@codemirror/search";
+import { highlightSelectionMatches, openSearchPanel, searchKeymap } from "@codemirror/search";
 import { vim } from "@replit/codemirror-vim";
-import { exitEmptyMarkdownBlock, externalDocumentChange, keepMobileCursorVisible } from "@/lib/editor/commands";
+import { capitalizeFirstListItemCharacter, continueMarkdownList, exitEmptyMarkdownBlock, externalDocumentChange, keepMobileCursorVisible } from "@/lib/editor/commands";
 import { livePreviewExtension, moveLivePreviewVertically, propertyIconConfig } from "@/lib/editor/live-preview";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
 import { propertyIconName, type PropertyIcons } from "@/lib/property-icons";
@@ -17,8 +19,17 @@ import { PropertyIconPopover } from "./editor/property-icon-picker";
 import { SuggestionMenu, type SuggestionMenuItem } from "./editor/suggestion-menu";
 import {
   EditorView,
+  crosshairCursor,
+  drawSelection,
+  dropCursor,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
   placeholder,
   keymap,
+  lineNumbers,
+  rectangularSelection,
+  scrollPastEnd,
 } from "@codemirror/view";
 
 type LiveMarkdownEditorProps = {
@@ -40,6 +51,36 @@ type LiveMarkdownEditorProps = {
 
 type ReferenceSuggestion = { name: string; count: number };
 type ReferenceQuery = { kind: "tag" | "person"; query: string; from: number; to: number };
+
+// Matches CodeMirror's `basicSetup`, with journaling-friendly undo grouping.
+const editorSetup = [
+  lineNumbers(),
+  highlightActiveLineGutter(),
+  highlightSpecialChars(),
+  history({ newGroupDelay: 1000 }),
+  foldGutter(),
+  drawSelection(),
+  dropCursor(),
+  EditorState.allowMultipleSelections.of(true),
+  indentOnInput(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  bracketMatching(),
+  closeBrackets(),
+  autocompletion(),
+  rectangularSelection(),
+  crosshairCursor(),
+  highlightActiveLine(),
+  highlightSelectionMatches(),
+  keymap.of([
+    ...closeBracketsKeymap,
+    ...defaultKeymap,
+    ...searchKeymap,
+    ...historyKeymap,
+    ...foldKeymap,
+    ...completionKeymap,
+    ...lintKeymap,
+  ]),
+];
 
 export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people, onBeforeAttachmentNavigation, propertyIcons, onPropertyIconChange }: LiveMarkdownEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -132,6 +173,12 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
             return true;
           }
         }
+        const activeEditor = editor.current;
+        if (event.key === "Enter" && activeEditor && (exitEmptyMarkdownBlock(activeEditor) || continueMarkdownList(activeEditor))) {
+          event.preventDefault();
+          activeEditor.focus();
+          return true;
+        }
         return false;
       },
       paste(event, view) {
@@ -174,10 +221,9 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       extensions: [
         vimCompartment.current.of([]),
         iconCompartment.current.of(propertyIconConfig.of({ icons: propertyIconsRef.current, openPicker: openIconPicker })),
-        basicSetup,
+        editorSetup,
         markdown({ base: markdownLanguage }),
         Prec.high(keymap.of([
-          { key: "Enter", run: exitEmptyMarkdownBlock },
           { key: "ArrowUp", run: (view) => moveLivePreviewVertically(view, -1), shift: (view) => moveLivePreviewVertically(view, -1, true) },
           { key: "ArrowDown", run: (view) => moveLivePreviewVertically(view, 1), shift: (view) => moveLivePreviewVertically(view, 1, true) },
           { key: "Tab", run: indentMore },
@@ -186,9 +232,12 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({
           spellcheck: "true",
+          autocorrect: "on",
           autocapitalize: "sentences",
         }),
+        EditorState.transactionFilter.of(capitalizeFirstListItemCharacter),
         placeholder("What’s on your mind?"),
+        scrollPastEnd(),
         livePreviewExtension(),
         Prec.high(editorEvents),
         EditorView.updateListener.of((update) => {
