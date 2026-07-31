@@ -85,16 +85,17 @@ test("reveals active syntax without changing Markdown", async ({ page }) => {
   await expect(page.locator("a.cm-live-navigation").filter({ hasText: "link" })).toHaveCount(1);
 });
 
-test("capitalizes the first word of a continued Markdown list item", async ({ page, browserName }) => {
+test("continues Markdown lists without rewriting lowercase input", async ({ page, browserName }) => {
   await seedEntry(page, browserName === "webkit" ? "2098-01-16" : "2098-01-15", "* Test");
   await clickInEditor(page, async () => {
     const [rect] = await lineTextRects(page, "* Test");
     return { x: Math.min(rect.right + 100, 500), y: rect.top + rect.height / 2 };
   });
   await page.keyboard.press("Enter");
+  await expect(page.locator(".cm-content")).toHaveAttribute("autocapitalize", "sentences");
   await page.keyboard.insertText("t");
   await page.waitForTimeout(50);
-  expect(await sourceValue(page)).toBe("* Test\n* T\n");
+  expect(await sourceValue(page)).toBe("* Test\n* t\n");
 });
 
 test("preserves metadata editing and mobile theme/view fallbacks", async ({ page }) => {

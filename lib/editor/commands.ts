@@ -1,37 +1,7 @@
-import { Transaction, type EditorState } from "@codemirror/state";
+import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { insertNewlineContinueMarkup } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
-
-const emptyListMarker = /^\s*(?:(?:[-+*])\s+(?:\[[ xX]\]\s*)?|\d+[.)]\s+)$/;
-
-// Browsers do not consistently apply `autocapitalize="sentences"` after
-// CodeMirror continues a Markdown list. Adjust the editor's own input
-// transaction rather than handling the DOM input ourselves, so composition,
-// cursor movement, and undo history remain CodeMirror-native.
-export function capitalizeFirstListItemCharacter(transaction: Transaction) {
-  if (!transaction.docChanged || !transaction.isUserEvent("input")) return transaction;
-  const changes: { from: number; to: number; insert: string }[] = [];
-  let changed = false;
-  transaction.changes.iterChanges((from, to, _fromNew, _toNew, inserted) => {
-    const text = inserted.toString();
-    const line = transaction.startState.doc.lineAt(from);
-    const capitalized = from === to && emptyListMarker.test(transaction.startState.doc.sliceString(line.from, from))
-      ? text.replace(/^\p{Ll}/u, (character) => character.toLocaleUpperCase())
-      : text;
-    changes.push({ from, to, insert: capitalized });
-    changed ||= capitalized !== text;
-  });
-  if (!changed) return transaction;
-  const userEvent = transaction.annotation(Transaction.userEvent);
-  return {
-    changes,
-    selection: transaction.selection,
-    effects: transaction.effects,
-    scrollIntoView: transaction.scrollIntoView,
-    ...(userEvent ? { userEvent } : {}),
-  };
-}
 
 export function continueMarkdownList(view: EditorView) {
   // The Markdown parser is incremental. It may not yet have parsed a just
