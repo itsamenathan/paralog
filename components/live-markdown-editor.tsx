@@ -29,7 +29,6 @@ import {
   keymap,
   lineNumbers,
   rectangularSelection,
-  scrollPastEnd,
 } from "@codemirror/view";
 
 type LiveMarkdownEditorProps = {
@@ -236,7 +235,6 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
           autocapitalize: "sentences",
         }),
         placeholder("What’s on your mind?"),
-        scrollPastEnd(),
         livePreviewExtension(),
         Prec.high(editorEvents),
         EditorView.updateListener.of((update) => {
