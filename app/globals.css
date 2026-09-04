@@ -407,8 +407,8 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 .live-editor-host .cm-live-metadata-delimiter-editing { color: color-mix(in srgb, var(--muted) 72%, transparent); font-size: inherit; letter-spacing: .08em; }
 .live-editor-host .cm-live-metadata-preview.cm-live-metadata-start .cm-live-metadata-delimiter-preview::after { content: "Properties"; color: var(--muted); font: 700 10px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
 .live-editor-host .cm-line.cm-live-metadata-preview.cm-live-metadata-field { min-height: 36px; display: grid; grid-template-columns: 18px minmax(94px, 30%) minmax(0, 1fr); align-items: center; gap: 7px; padding-block: 5px; font-size: 12px; line-height: 1.45; }
-/* CodeMirror pads uneditable widgets with a zero-width `display: inline` image, which a grid container would otherwise blockify into a second-row grid item. */
-.live-editor-host .cm-line.cm-live-metadata-preview.cm-live-metadata-field > .cm-widgetBuffer { display: none; }
+/* CodeMirror pads uneditable widgets with a zero-width `display: inline` image. */
+.live-editor-host .cm-line.cm-live-metadata-preview > .cm-widgetBuffer { display: none; }
 .live-editor-host .cm-live-property-icon { grid-column: 1; grid-row: 1; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 5px; background: none; color: color-mix(in srgb, var(--accent) 72%, var(--muted)); cursor: pointer; }
 .live-editor-host .cm-live-property-icon svg { width: 14px; height: 14px; }
 .live-editor-host .cm-live-property-icon:hover, .live-editor-host .cm-live-property-icon:focus-visible { background: var(--accent-soft); color: var(--accent); outline: none; }
