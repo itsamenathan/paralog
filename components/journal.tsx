@@ -1,7 +1,22 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Code as CodeIcon,
+  Ellipsis as MoreIcon,
+  FileClock as HistoryIcon,
+  Link as LinkIcon,
+  List as ListIcon,
+  ListTree as OutlineIcon,
+  MapPin as LocationIcon,
+  Paperclip as AttachmentIcon,
+  Quote as QuoteIcon,
+  Redo as RedoIcon,
+  Search as SearchIcon,
+  Undo as UndoIcon,
+  type IconNode,
+} from "lucide";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { remarkJournalReferences } from "@/lib/markdown-references";
@@ -32,6 +47,7 @@ import { useTheme } from "./journal/use-theme";
 import type { JournalSettings } from "./journal/types";
 import { AttachmentPicker } from "./attachments/attachment-picker";
 import type { AttachmentSummary } from "@/lib/attachment-types";
+import type { LiveMarkdownEditorHandle } from "./live-markdown-editor";
 
 const LiveMarkdownEditor = dynamic(() => import("./live-markdown-editor"), {
   ssr: false,
@@ -48,6 +64,7 @@ type Entry = {
 type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: string; count?: number };
 type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
 type SaveState = "saved" | "saving" | "unsaved" | "offline";
+type EditorViewMode = "rich" | "source" | "preview";
 type CachedEntry = Entry & { pending: boolean; updatedAt: string };
 type CommandIconName = "edit" | "markdown" | "read" | "focus";
 
@@ -57,6 +74,12 @@ function CommandIcon({ name }: { name: CommandIconName }) {
     {name === "markdown" && <><path d="m8 9-3 3 3 3" /><path d="m16 9 3 3-3 3" /><path d="m14 5-4 14" /></>}
     {name === "read" && <><path d="M3 5.5A3.5 3.5 0 0 1 6.5 4H11v16H6.5A3.5 3.5 0 0 0 3 21.5Z" /><path d="M21 5.5A3.5 3.5 0 0 0 17.5 4H13v16h4.5a3.5 3.5 0 0 1 3.5 1.5Z" /></>}
     {name === "focus" && <><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M16 3h3a2 2 0 0 1 2 2v3" /><path d="M8 21H5a2 2 0 0 1-2-2v-3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></>}
+  </svg>;
+}
+
+function ToolbarIcon({ icon, className = "toolbar-icon" }: { icon: IconNode; className?: string }) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {icon.map(([tag, attributes], index) => createElement(tag, { key: index, ...attributes }))}
   </svg>;
 }
 
@@ -77,6 +100,12 @@ const parseIso = (value: string | null) => {
 const storedMarkdown = (content: string) => content.endsWith("\n") ? content : `${content}\n`;
 // Set by the service worker on a cached copy served because the network failed.
 const OFFLINE_RESPONSE = "X-Paralog-Offline";
+const VIEW_SEQUENCE: EditorViewMode[] = ["rich", "source", "preview"];
+const VIEW_LABEL: Record<EditorViewMode, string> = {
+  rich: "Editor",
+  source: "Markdown source",
+  preview: "Reading",
+};
 
 function keepSourceCursorVisible(textarea: HTMLTextAreaElement) {
   const viewport = window.visualViewport;
@@ -150,7 +179,7 @@ export default function Journal() {
   const [dayWords, setDayWords] = useState<Record<string, number>>({});
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [dirty, setDirty] = useState(false);
-  const [view, setView] = useState<"rich" | "source" | "preview">("rich");
+  const [view, setView] = useState<EditorViewMode>("rich");
   const [settings, setSettings] = useState<JournalSettings | null>(null);
   const { tags, people, refreshReferences: loadReferences } = useJournalReferences();
   const { activities, photos, photoTotal } = useDayContext(selected);
@@ -182,6 +211,7 @@ export default function Journal() {
   const saveStateRef = useRef(saveState);
   const serverContentRef = useRef<string | null>(null);
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const liveEditorRef = useRef<LiveMarkdownEditorHandle | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   const autoLocationAttemptedRef = useRef(new Set<string>());
   selectedRef.current = selected;
@@ -196,6 +226,13 @@ export default function Journal() {
     return { words, characters: body.length, paragraphs: trimmed ? trimmed.split(/\n\s*\n/).length : 0, minutes: words ? Math.max(1, Math.ceil(words / 220)) : 0 };
   }, [entry.content]);
   const handleJumpHandled = useCallback(() => setOutlineJump(null), []);
+  const nextView = VIEW_SEQUENCE[(VIEW_SEQUENCE.indexOf(view) + 1) % VIEW_SEQUENCE.length];
+
+  function cycleView() {
+    setView(nextView);
+    setShowTools(false);
+    setShowOutline(false);
+  }
 
   const moveOpenPhoto = useCallback((offset: number) => {
     setOpenPhoto((current) => {
@@ -899,9 +936,6 @@ export default function Journal() {
             <div><p className="eyebrow">JOURNAL ENTRY</p><h2>{displayDate(selected)}</h2></div>
             <button type="button" onClick={() => moveDay(1)} aria-label="Next day"><span aria-hidden="true">→</span></button>
           </div>
-          <div className="header-actions">
-            <button className={`save-control ${saveState}`} type="button" title="Save entry (Ctrl+S or Cmd+S)" aria-live="polite" onClick={() => persistEntry(selected, entry.content, entry)} disabled={saveState === "saving"}><i aria-hidden="true" /><span>{statusCopy[saveState]}</span></button>
-          </div>
         </header>
 
         {locationMessage && <div className={`location-feedback ${locationState}`} role="status">
@@ -913,23 +947,47 @@ export default function Journal() {
         <div className="entry-workspace">
         <div className="entry-editor-column">
         <div className="editor-command-bar" aria-label="Editor controls">
-          <div className="view-switcher" role="group" aria-label="Entry view">
-            <button type="button" aria-label="Editor view" title="Editor" aria-pressed={view === "rich"} onClick={() => setView("rich")}><CommandIcon name="edit" /></button>
-            <button type="button" aria-label="Markdown source" title="Markdown" aria-pressed={view === "source"} onClick={() => setView("source")}><CommandIcon name="markdown" /></button>
-            <button type="button" aria-label="Reading view" title="Read" aria-pressed={view === "preview"} onClick={() => setView("preview")}><CommandIcon name="read" /></button>
-          </div>
+          <button
+            className="view-cycle"
+            type="button"
+            data-view={view}
+            aria-label={`${VIEW_LABEL[view]} view. Switch to ${VIEW_LABEL[nextView]} view`}
+            title={`${VIEW_LABEL[view]} view. Click for ${VIEW_LABEL[nextView]}`}
+            onClick={cycleView}
+          ><CommandIcon name={view === "rich" ? "edit" : view === "source" ? "markdown" : "read"} /></button>
+          {view === "rich" && <>
+            <span className="command-divider" aria-hidden="true" />
+            <div className="formatting-essentials" role="toolbar" aria-label="Markdown formatting">
+              <button type="button" aria-label="Increase heading level" title="Increase heading level" onClick={() => liveEditorRef.current?.heading()}>H</button>
+              <button className="format-bold" type="button" aria-label="Bold" title="Bold" onClick={() => liveEditorRef.current?.bold()}>B</button>
+              <button className="format-italic" type="button" aria-label="Italic" title="Italic" onClick={() => liveEditorRef.current?.italic()}>I</button>
+              <button type="button" aria-label="Undo" title="Undo" onClick={() => liveEditorRef.current?.undo()}><ToolbarIcon icon={UndoIcon} /></button>
+              <button type="button" aria-label="Redo" title="Redo" onClick={() => liveEditorRef.current?.redo()}><ToolbarIcon icon={RedoIcon} /></button>
+            </div>
+          </>}
           <span className="command-spacer" />
           <button className={`command-stat ${showStats ? "active" : ""}`} type="button" aria-expanded={showStats} onClick={() => { setShowStats((value) => !value); setShowOutline(false); setShowTools(false); }}>{writingStats.words} {writingStats.words === 1 ? "word" : "words"}</button>
-          <button className={`command-icon-button ${focusMode ? "active" : ""}`} type="button" aria-label={focusMode ? "Exit focus mode" : "Enter focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setShowTools(false); }}><CommandIcon name="focus" /></button>
           <div className="tools-menu-wrap" ref={toolsMenuRef}>
-            <button className={`tools-trigger ${showTools ? "active" : ""}`} type="button" aria-haspopup="menu" aria-expanded={showTools} onClick={() => setShowTools((value) => !value)}>Tools <span aria-hidden="true">⌄</span></button>
+            <button className={`more-trigger ${showTools ? "active" : ""}`} type="button" aria-label="More tools" title="More tools" aria-haspopup="menu" aria-expanded={showTools} onClick={() => setShowTools((value) => !value)}><ToolbarIcon icon={MoreIcon} /></button>
             {showTools && <div className="tools-menu" role="menu">
-              <button type="button" role="menuitem" disabled={!online || locationState === "locating" || locationState === "looking-up"} onClick={() => { setShowTools(false); void addLocation(); }}><b>{locationState === "locating" ? "Locating…" : locationState === "looking-up" ? "Finding city…" : "Add location"}</b><small>Add city, state, and country to metadata</small></button>
-              <button type="button" role="menuitem" onClick={() => { setShowTools(false); setAttachmentPicker("all"); }}><b>Add attachment</b><small>Upload a file or choose from your library</small></button>
-              <button type="button" role="menuitem" disabled={outline.length === 0} onClick={() => { setShowOutline((value) => !value); setShowStats(false); setShowTools(false); }}><b>Outline</b><small>{outline.length ? `${outline.length} ${outline.length === 1 ? "heading" : "headings"}` : "No headings yet"}</small></button>
-              <button type="button" role="menuitem" onClick={() => { setShowTools(false); openRevisions(); }}><b>Version history</b><small>Review and restore earlier saves</small></button>
+              {view === "rich" && <>
+                <div className="tools-menu-heading">Formatting</div>
+                <button type="button" role="menuitem" onClick={() => { setShowTools(false); liveEditorRef.current?.link(); }}><ToolbarIcon icon={LinkIcon} /><span><b>Link</b><small>Add a link to selected text</small></span></button>
+                <button type="button" role="menuitem" onClick={() => { setShowTools(false); liveEditorRef.current?.code(); }}><ToolbarIcon icon={CodeIcon} /><span><b>Inline code</b><small>Wrap selection in backticks</small></span></button>
+                <button type="button" role="menuitem" onClick={() => { setShowTools(false); liveEditorRef.current?.list(); }}><ToolbarIcon icon={ListIcon} /><span><b>Bulleted list</b><small>Start a Markdown list</small></span></button>
+                <button type="button" role="menuitem" onClick={() => { setShowTools(false); liveEditorRef.current?.quote(); }}><ToolbarIcon icon={QuoteIcon} /><span><b>Quote</b><small>Start a block quote</small></span></button>
+                <button type="button" role="menuitem" onClick={() => { setShowTools(false); liveEditorRef.current?.search(); }}><ToolbarIcon icon={SearchIcon} /><span><b>Find and replace</b><small>Search within this entry</small></span></button>
+                <div className="tools-menu-divider" role="separator" />
+              </>}
+              <div className="tools-menu-heading">Entry tools</div>
+              <button type="button" role="menuitem" disabled={!online || locationState === "locating" || locationState === "looking-up"} onClick={() => { setShowTools(false); void addLocation(); }}><ToolbarIcon icon={LocationIcon} /><span><b>{locationState === "locating" ? "Locating…" : locationState === "looking-up" ? "Finding city…" : "Add location"}</b><small>Add city, state, and country to metadata</small></span></button>
+              <button type="button" role="menuitem" onClick={() => { setShowTools(false); setAttachmentPicker("all"); }}><ToolbarIcon icon={AttachmentIcon} /><span><b>Add attachment</b><small>Upload a file or choose from your library</small></span></button>
+              <button type="button" role="menuitem" disabled={outline.length === 0} onClick={() => { setShowOutline((value) => !value); setShowStats(false); setShowTools(false); }}><ToolbarIcon icon={OutlineIcon} /><span><b>Outline</b><small>{outline.length ? `${outline.length} ${outline.length === 1 ? "heading" : "headings"}` : "No headings yet"}</small></span></button>
+              <button type="button" role="menuitem" onClick={() => { setShowTools(false); openRevisions(); }}><ToolbarIcon icon={HistoryIcon} /><span><b>Version history</b><small>Review and restore earlier saves</small></span></button>
             </div>}
           </div>
+          <button className={`command-icon-button ${focusMode ? "active" : ""}`} type="button" aria-label={focusMode ? "Exit focus mode" : "Enter focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} aria-pressed={focusMode} onClick={() => { setFocusMode((value) => !value); setShowTools(false); }}><CommandIcon name="focus" /></button>
+          <button className={`save-control compact ${saveState}`} type="button" title="Save entry (Ctrl+S or Cmd+S)" aria-live="polite" onClick={() => persistEntry(selected, entry.content, entry)} disabled={saveState === "saving"}><i aria-hidden="true" /><span>{statusCopy[saveState]}</span></button>
         </div>
         {showOutline && <nav className="editor-popover outline-panel" aria-label="Entry outline">
           {outline.map((heading) => <button type="button" key={`${heading.line}-${heading.text}`} style={{ "--outline-level": heading.level } as React.CSSProperties} onClick={() => { setView("rich"); setOutlineJump(heading.line); setShowOutline(false); }}>{heading.text}</button>)}
@@ -942,7 +1000,7 @@ export default function Journal() {
           <button className="template-button" type="button" onClick={() => changeContent(entry.template)}>Start with your template →</button>
         )}
         <div className={`editor-frame ${loading ? "loading" : ""}`}>
-          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor markdown={entry.content} onChange={changeContent} onUpload={uploadFile} entryDate={selected} online={online} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} onBeforeAttachmentNavigation={flushDirtyEntry} propertyIcons={settings?.propertyIcons ?? {}} onPropertyIconChange={savePropertyIcon} />}
+          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor ref={liveEditorRef} markdown={entry.content} onChange={changeContent} onUpload={uploadFile} entryDate={selected} online={online} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} onBeforeAttachmentNavigation={flushDirtyEntry} propertyIcons={settings?.propertyIcons ?? {}} onPropertyIconChange={savePropertyIcon} />}
         </div>
         </div>
         <aside className="entry-context-column" aria-label="Daily activity and archive memories">

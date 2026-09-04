@@ -5,6 +5,7 @@ import {
   lineTextRects,
   pointAtTextOffset,
   seedEntry,
+  setEditorView,
   sourceValue,
 } from "./editor-fixtures";
 
@@ -98,6 +99,23 @@ test("continues Markdown lists without rewriting lowercase input", async ({ page
   expect(await sourceValue(page)).toBe("* Test\n* t\n");
 });
 
+test("places the caret at the start of heading text", async ({ page }) => {
+  await seedEntry(page, "2098-01-09", "A heading in progress");
+  await clickInEditor(page, () => pointAtTextOffset(page, "A heading in progress", 5));
+  await page.getByRole("button", { name: "Increase heading level" }).click();
+  await page.keyboard.insertText("New ");
+  expect(await sourceValue(page)).toBe("# New A heading in progress\n");
+});
+
+test("cycles heading levels without starting at heading two", async ({ page }) => {
+  await seedEntry(page, "2098-01-10", "A heading in progress");
+  await clickInEditor(page, () => pointAtTextOffset(page, "A heading in progress", 5));
+  await page.getByRole("button", { name: "Increase heading level" }).click();
+  expect(await sourceValue(page)).toBe("# A heading in progress\n");
+  await page.getByRole("button", { name: "Increase heading level" }).click();
+  expect(await sourceValue(page)).toBe("## A heading in progress\n");
+});
+
 test("preserves metadata editing and mobile theme/view fallbacks", async ({ page }) => {
   const metadata = `---\nlocation: \"Denver, Colorado\"\n---\n\n${documentText}`;
   await seedEntry(page, "2098-01-04", metadata);
@@ -113,9 +131,9 @@ test("preserves metadata editing and mobile theme/view fallbacks", async ({ page
   }
   await page.getByRole("button", { name: "Use light mode" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByRole("button", { name: "Reading view" }).click();
+  await setEditorView(page, "preview");
   await expect(page.locator("article.preview")).toBeVisible();
-  await page.getByRole("button", { name: "Markdown source" }).click();
+  await setEditorView(page, "source");
   await expect(page.locator("textarea.source-editor")).toBeVisible();
 });
 

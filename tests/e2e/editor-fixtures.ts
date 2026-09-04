@@ -21,11 +21,20 @@ export async function seedEntry(page: Page, date: string, content: string) {
 }
 
 export async function sourceValue(page: Page) {
-  await page.getByRole("button", { name: "Markdown source" }).click();
+  await setEditorView(page, "source");
   const value = await page.locator("textarea.source-editor").inputValue();
-  await page.getByRole("button", { name: "Editor view" }).click();
+  await setEditorView(page, "rich");
   await expect(page.locator(".live-editor-host .cm-editor")).toBeVisible();
   return value;
+}
+
+export async function setEditorView(page: Page, target: "rich" | "source" | "preview") {
+  const control = page.locator(".view-cycle");
+  for (let step = 0; step < 3; step += 1) {
+    if (await control.getAttribute("data-view") === target) return;
+    await control.click();
+  }
+  await expect(control).toHaveAttribute("data-view", target);
 }
 
 // Clicking at a point measured earlier can miss. The entry is re-seeded between
