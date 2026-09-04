@@ -63,6 +63,18 @@ export type LiveMarkdownEditorHandle = {
 type ReferenceSuggestion = { name: string; count: number };
 type ReferenceQuery = { kind: "tag" | "person"; query: string; from: number; to: number };
 
+function initialEditorAnchor(markdown: string) {
+  if (markdown.split(/\r?\n/, 1)[0]?.trim() !== "---") return 0;
+  const lines = markdown.match(/.*(?:\r?\n|$)/g) ?? [];
+  let offset = 0;
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    offset += lines[index - 1].length;
+    if (line.replace(/\r?\n$/, "").trim() === "---") return offset + line.length;
+  }
+  return 0;
+}
+
 // Matches CodeMirror's `basicSetup`, with journaling-friendly undo grouping.
 const editorSetup = [
   lineNumbers(),
@@ -229,6 +241,7 @@ const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEdit
     });
     const state = EditorState.create({
       doc: value,
+      selection: { anchor: initialEditorAnchor(value) },
       extensions: [
         vimCompartment.current.of([]),
         iconCompartment.current.of(propertyIconConfig.of({ icons: propertyIconsRef.current, openPicker: openIconPicker })),

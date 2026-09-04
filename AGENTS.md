@@ -44,18 +44,18 @@ mise run browser -- skills get core      # version-matched usage guide; read bef
 
 The examples below are written as bare `agent-browser` for readability; prefix each with `mise run browser --`.
 
-**Never point the browser at a server you did not start.** `mise run test:start` serves `.test-data`, but a `mise run dev` server on the same port serves the real journal in `data/`. Start the test server on a port you know is free and confirm the data directory it prints:
+**Never point the browser at a server you did not start.** `mise run test:start` serves `.test-data` on `0.0.0.0:3000` by default, but a `mise run dev` server on the same port serves the real journal in `data/`. Confirm the data directory printed at startup. Use `PARALOG_TEST_PORT` only when port 3000 is unavailable:
 
 ```bash
-PARALOG_TEST_PORT=3457 mise run test:start   # prints the port, data directory, and password
-PARALOG_TEST_PORT=3457 mise run test:stop
+mise run test:start   # prints the port, data directory, and password
+mise run test:stop
 ```
 
 Isolate the browser session per project with `AGENT_BROWSER_SESSION`, and on Linux hosts that block unprivileged user namespaces (Ubuntu 23.10+ AppArmor) pass `--args "--no-sandbox"` on the first `open`:
 
 ```bash
 export AGENT_BROWSER_SESSION=paralog
-agent-browser open http://localhost:3457 --args "--no-sandbox"
+agent-browser open http://localhost:3000 --args "--no-sandbox"
 agent-browser snapshot -i -c            # interactive, compact; @eN refs
 agent-browser fill @e3 paralog          # refs go stale on any page change — re-snapshot
 agent-browser press Enter

@@ -149,9 +149,9 @@ async function serve() {
   if (process.env.PARALOG_TEST_RESET === "1") fs.rmSync(dataDir, { recursive: true, force: true });
   fs.mkdirSync(dataDir, { recursive: true });
 
-  const port = Number.parseInt(process.env.PARALOG_TEST_PORT || "3100", 10);
+  const port = Number.parseInt(process.env.PARALOG_TEST_PORT || "3000", 10);
   const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
-  const child = spawn(process.execPath, [next, "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
+  const child = spawn(process.execPath, [next, "dev", "--hostname", "0.0.0.0", "--port", String(port)], {
     cwd: root,
     windowsHide: true,
     stdio: "inherit",
