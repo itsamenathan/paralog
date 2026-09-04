@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { closeBrackets, autocompletion, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentLess, indentMore, redo, undo } from "@codemirror/commands";
 import { bracketMatching, defaultHighlightStyle, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting } from "@codemirror/language";
@@ -14,7 +14,6 @@ import { livePreviewExtension, moveLivePreviewVertically, propertyIconConfig } f
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
 import { propertyIconName, type PropertyIcons } from "@/lib/property-icons";
 import { AttachmentPicker } from "./attachments/attachment-picker";
-import { EditorToolbar } from "./editor/editor-toolbar";
 import { PropertyIconPopover } from "./editor/property-icon-picker";
 import { SuggestionMenu, type SuggestionMenuItem } from "./editor/suggestion-menu";
 import {
@@ -31,7 +30,7 @@ import {
   rectangularSelection,
 } from "@codemirror/view";
 
-type LiveMarkdownEditorProps = {
+export type LiveMarkdownEditorProps = {
   markdown: string;
   onChange: (markdown: string) => void;
   onUpload: (file: File) => Promise<AttachmentSummary | null>;
@@ -46,6 +45,19 @@ type LiveMarkdownEditorProps = {
   onBeforeAttachmentNavigation: () => void;
   propertyIcons: PropertyIcons;
   onPropertyIconChange: (property: string, icon: string | null) => void;
+};
+
+export type LiveMarkdownEditorHandle = {
+  undo: () => void;
+  redo: () => void;
+  heading: () => void;
+  bold: () => void;
+  italic: () => void;
+  code: () => void;
+  link: () => void;
+  list: () => void;
+  quote: () => void;
+  search: () => void;
 };
 
 type ReferenceSuggestion = { name: string; count: number };
@@ -81,7 +93,7 @@ const editorSetup = [
   ]),
 ];
 
-export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people, onBeforeAttachmentNavigation, propertyIcons, onPropertyIconChange }: LiveMarkdownEditorProps) {
+const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people, onBeforeAttachmentNavigation, propertyIcons, onPropertyIconChange }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const vimCompartment = useRef(new Compartment());
@@ -358,6 +370,21 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
     view.focus();
   }
 
+  function cycleHeading() {
+    const view = editor.current;
+    if (!view) return;
+    const line = view.state.doc.lineAt(view.state.selection.main.head);
+    const currentPrefix = /^(#{1,6})(?:\s+|$)/.exec(line.text)?.[0] ?? "";
+    const currentLevel = currentPrefix.match(/#/g)?.length ?? 0;
+    const nextLevel = currentLevel >= 6 ? 1 : currentLevel + 1;
+    const nextPrefix = `${"#".repeat(nextLevel)} `;
+    view.dispatch({
+      changes: { from: line.from, to: line.from + currentPrefix.length, insert: nextPrefix },
+      selection: { anchor: line.from + nextPrefix.length },
+    });
+    view.focus();
+  }
+
   function applyLink() {
     const view = editor.current;
     const raw = linkUrl.trim();
@@ -375,6 +402,19 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
     setLinkUrl("");
     view.focus();
   }
+
+  useImperativeHandle(ref, () => ({
+    undo: () => { if (editor.current) undo(editor.current); },
+    redo: () => { if (editor.current) redo(editor.current); },
+    heading: cycleHeading,
+    bold: () => wrap("**"),
+    italic: () => wrap("*"),
+    code: () => wrap("`"),
+    link: () => setShowLinkInput(true),
+    list: () => prefixLine("- "),
+    quote: () => prefixLine("> "),
+    search: () => { if (editor.current) openSearchPanel(editor.current); },
+  }));
 
   function clearSlash() {
     const view = editor.current;
@@ -474,20 +514,7 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
   }, [menuItems.length, normalizedReferenceQuery, referenceQuery?.kind, slashQuery]);
 
   return <div className="live-markdown-editor">
-    <EditorToolbar
-      uploading={uploading}
-      uploadError={uploadError}
-      onUndo={() => { if (editor.current) undo(editor.current); }}
-      onRedo={() => { if (editor.current) redo(editor.current); }}
-      onHeading={() => prefixLine("## ")}
-      onBold={() => wrap("**")}
-      onItalic={() => wrap("*")}
-      onCode={() => wrap("`")}
-      onLink={() => setShowLinkInput(true)}
-      onList={() => prefixLine("- ")}
-      onQuote={() => prefixLine("> ")}
-      onSearch={() => { if (editor.current) openSearchPanel(editor.current); }}
-    />
+    {(uploading || uploadError) && <div className={`editor-upload-feedback ${uploadError ? "error" : ""}`} role="status">{uploadError || "Uploading…"}</div>}
     {showLinkInput && <form className="link-insert" onSubmit={(event) => { event.preventDefault(); applyLink(); }}>
       <input autoFocus type="text" inputMode="url" placeholder="https://example.com" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} />
       <button type="submit">Insert link</button>
@@ -512,4 +539,6 @@ export default function LiveMarkdownEditor({ markdown: value, onChange, onUpload
       onClose={() => setIconProperty(null)}
     />}
   </div>;
-}
+});
+
+export default LiveMarkdownEditor;
