@@ -7,6 +7,7 @@ import { normalizePropertyIcons, resolvePropertyIconsUpdate, type PropertyIcons 
 import { validateSaveFormat } from "./path-format";
 
 export const DEFAULT_SAVE_FORMAT = "YYYY/MM-MMMM/YYYY-MM-DD-dddd.md";
+export type EntryCursorPlacement = "after-properties" | "end";
 const DEFAULT_PROVIDER_ORDER = ["immich", "archive", "github"] as const;
 export type ProviderId = typeof DEFAULT_PROVIDER_ORDER[number];
 
@@ -60,6 +61,10 @@ function propertyIcons() {
   }
 }
 
+function entryCursorPlacement(): EntryCursorPlacement {
+  return setting("entryCursorPlacement", "end") === "after-properties" ? "after-properties" : "end";
+}
+
 export function settings() {
   const layout = widgetLayout();
   return {
@@ -70,6 +75,7 @@ export function settings() {
     propertyIcons: propertyIcons(),
     ...legacyWidgetSettings(layout),
     vimMode: setting("vimMode", "false") === "true",
+    entryCursorPlacement: entryCursorPlacement(),
     autoSave: setting("autoSave", "true") !== "false",
     autoLocation: setting("autoLocation", "false") === "true",
   };
@@ -83,6 +89,7 @@ export function updateSettings(values: {
   propertyIcons?: PropertyIcons;
   showTagCloud?: boolean;
   vimMode?: boolean;
+  entryCursorPlacement?: EntryCursorPlacement;
   autoSave?: boolean;
   autoLocation?: boolean;
   providerOrder?: ProviderId[];
@@ -92,6 +99,9 @@ export function updateSettings(values: {
   validateSaveFormat(saveFormat);
   const template = values.template ?? current.template;
   const vimMode = values.vimMode ?? current.vimMode;
+  const cursorPlacement = values.entryCursorPlacement === "after-properties" || values.entryCursorPlacement === "end"
+    ? values.entryCursorPlacement
+    : current.entryCursorPlacement;
   const autoSave = values.autoSave ?? current.autoSave;
   const autoLocation = values.autoLocation ?? current.autoLocation;
   const nextWidgetLayout = resolveWidgetLayoutUpdate(current.widgetLayout, values);
@@ -106,6 +116,7 @@ export function updateSettings(values: {
   upsert("propertyIcons", JSON.stringify(nextPropertyIcons));
   upsert("showTagCloud", String(legacy.showTagCloud));
   upsert("vimMode", String(vimMode));
+  upsert("entryCursorPlacement", cursorPlacement);
   upsert("autoSave", String(autoSave));
   upsert("autoLocation", String(autoLocation));
   upsert("providerOrder", JSON.stringify(legacy.providerOrder));

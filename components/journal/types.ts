@@ -13,6 +13,7 @@ export type Entry = {
 };
 
 export type NotificationRule = "always" | "empty";
+export type EntryCursorPlacement = "after-properties" | "end";
 
 export type NotificationSchedule = {
   id: string;
@@ -32,6 +33,7 @@ export type JournalSettings = {
   propertyIcons: PropertyIcons;
   showTagCloud: boolean;
   vimMode: boolean;
+  entryCursorPlacement: EntryCursorPlacement;
   autoSave: boolean;
   autoLocation: boolean;
   providerOrder: WidgetLayout["context"];

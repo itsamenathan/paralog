@@ -13,6 +13,7 @@ import { continueMarkdownList, exitEmptyMarkdownBlock, externalDocumentChange, k
 import { livePreviewExtension, moveLivePreviewVertically, propertyIconConfig } from "@/lib/editor/live-preview";
 import { attachmentMarkdown, type AttachmentKind, type AttachmentSummary } from "@/lib/attachment-types";
 import { propertyIconName, type PropertyIcons } from "@/lib/property-icons";
+import type { EntryCursorPlacement } from "./journal/types";
 import { AttachmentPicker } from "./attachments/attachment-picker";
 import { PropertyIconPopover } from "./editor/property-icon-picker";
 import { SuggestionMenu, type SuggestionMenuItem } from "./editor/suggestion-menu";
@@ -40,6 +41,7 @@ export type LiveMarkdownEditorProps = {
   jumpToLine: number | null;
   onJumpHandled: () => void;
   vimMode: boolean;
+  entryCursorPlacement: EntryCursorPlacement;
   tags: ReferenceSuggestion[];
   people: ReferenceSuggestion[];
   onBeforeAttachmentNavigation: () => void;
@@ -63,14 +65,15 @@ export type LiveMarkdownEditorHandle = {
 type ReferenceSuggestion = { name: string; count: number };
 type ReferenceQuery = { kind: "tag" | "person"; query: string; from: number; to: number };
 
-function initialEditorAnchor(markdown: string) {
-  if (markdown.split(/\r?\n/, 1)[0]?.trim() !== "---") return 0;
+function initialCursorAnchor(markdown: string, placement: EntryCursorPlacement) {
+  if (placement === "end") return markdown.length;
   const lines = markdown.match(/.*(?:\r?\n|$)/g) ?? [];
-  let offset = 0;
+  if (lines[0]?.replace(/\r?\n$/, "").trim() !== "---") return 0;
+  let offset = lines[0].length;
   for (let index = 1; index < lines.length; index += 1) {
     const line = lines[index];
-    offset += lines[index - 1].length;
-    if (line.replace(/\r?\n$/, "").trim() === "---") return offset + line.length;
+    offset += line.length;
+    if (line.replace(/\r?\n$/, "").trim() === "---") return offset;
   }
   return 0;
 }
@@ -105,7 +108,7 @@ const editorSetup = [
   ]),
 ];
 
-const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, tags, people, onBeforeAttachmentNavigation, propertyIcons, onPropertyIconChange }, ref) {
+const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEditorProps>(function LiveMarkdownEditor({ markdown: value, onChange, onUpload, entryDate, online, template, jumpToLine, onJumpHandled, vimMode, entryCursorPlacement, tags, people, onBeforeAttachmentNavigation, propertyIcons, onPropertyIconChange }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const vimCompartment = useRef(new Compartment());
@@ -132,6 +135,7 @@ const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEdit
   openIconPickerRef.current = (property) => setIconProperty(property);
   const openIconPicker = useRef((property: string) => openIconPickerRef.current(property)).current;
   const propertyIconsRef = useRef(propertyIcons);
+  const cursorPlacementRef = useRef(entryCursorPlacement);
   propertyIconsRef.current = propertyIcons;
   onChangeRef.current = onChange;
   onUploadRef.current = onUpload;
@@ -241,7 +245,7 @@ const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEdit
     });
     const state = EditorState.create({
       doc: value,
-      selection: { anchor: initialEditorAnchor(value) },
+      selection: { anchor: initialCursorAnchor(value, entryCursorPlacement) },
       extensions: [
         vimCompartment.current.of([]),
         iconCompartment.current.of(propertyIconConfig.of({ icons: propertyIconsRef.current, openPicker: openIconPicker })),
@@ -328,6 +332,14 @@ const LiveMarkdownEditor = forwardRef<LiveMarkdownEditorHandle, LiveMarkdownEdit
       effects: iconCompartment.current.reconfigure(propertyIconConfig.of({ icons: propertyIcons, openPicker: openIconPicker })),
     });
   }, [propertyIcons, openIconPicker]);
+
+  useEffect(() => {
+    if (cursorPlacementRef.current === entryCursorPlacement) return;
+    cursorPlacementRef.current = entryCursorPlacement;
+    const view = editor.current;
+    if (!view) return;
+    view.dispatch({ selection: { anchor: initialCursorAnchor(view.state.doc.toString(), entryCursorPlacement) } });
+  }, [entryCursorPlacement]);
 
   useEffect(() => {
     const viewport = window.visualViewport;

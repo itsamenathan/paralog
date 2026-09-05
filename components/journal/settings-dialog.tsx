@@ -48,6 +48,7 @@ export function SettingsDialog({
       <div className="settings-title"><div><p className="eyebrow">PREFERENCES</p><h2 id="settings-title">Journal settings</h2></div><button type="button" onClick={onClose} aria-label="Close settings">×</button></div>
       <label>Save format<small>Tokens: YYYY, MM, MMMM, DD, dddd. Existing files stay where they are.</small><input value={settings.saveFormat} onChange={(event) => onChange({ ...settings, saveFormat: event.target.value })} /></label>
       <label>New entry template<small>Use any Markdown you want as a starting point. Open it with a <code>---</code> block to give new entries properties, like <code>mood:</code> or <code>tags:</code>.</small><textarea value={settings.template} onChange={(event) => onChange({ ...settings, template: event.target.value })} /></label>
+      <label>Start writing<small>Choose where the cursor goes when you open an entry.</small><select value={settings.entryCursorPlacement} onChange={(event) => onChange({ ...settings, entryCursorPlacement: event.target.value as JournalSettings["entryCursorPlacement"] })}><option value="after-properties">After properties</option><option value="end">End of entry</option></select></label>
       <PropertyIconsEditor
         propertyIcons={settings.propertyIcons}
         propertyNames={[...propertyNames, ...frontMatterPropertyNames(settings.template)]}
