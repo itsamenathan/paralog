@@ -1000,7 +1000,7 @@ export default function Journal() {
           <button className="template-button" type="button" onClick={() => changeContent(entry.template)}>Start with your template →</button>
         )}
         <div className={`editor-frame ${loading ? "loading" : ""}`}>
-          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor ref={liveEditorRef} markdown={entry.content} onChange={changeContent} onUpload={uploadFile} entryDate={selected} online={online} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} tags={tags} people={people} onBeforeAttachmentNavigation={flushDirtyEntry} propertyIcons={settings?.propertyIcons ?? {}} onPropertyIconChange={savePropertyIcon} />}
+          {view === "preview" ? rendered : view === "source" ? sourceEditor : <LiveMarkdownEditor ref={liveEditorRef} markdown={entry.content} onChange={changeContent} onUpload={uploadFile} entryDate={selected} online={online} template={entry.template} jumpToLine={outlineJump} onJumpHandled={handleJumpHandled} vimMode={Boolean(settings?.vimMode)} entryCursorPlacement={settings?.entryCursorPlacement ?? "end"} tags={tags} people={people} onBeforeAttachmentNavigation={flushDirtyEntry} propertyIcons={settings?.propertyIcons ?? {}} onPropertyIconChange={savePropertyIcon} />}
         </div>
         </div>
         <aside className="entry-context-column" aria-label="Daily activity and archive memories">
