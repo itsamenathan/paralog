@@ -2,6 +2,17 @@ import { EditorSelection, type EditorState, type Extension } from "@codemirror/s
 import { EditorView } from "@codemirror/view";
 import { documentPositionAtPointer, mapPointerAnchor } from "./dom-position";
 
+type PointerAnchor = { position: number; x: number; y: number; time: number };
+
+const lastPointerAnchors = new WeakMap<EditorView, PointerAnchor>();
+
+function isSameClickSequence(previous: PointerAnchor | undefined, event: MouseEvent) {
+  return Boolean(previous
+    && event.timeStamp - previous.time < 1_000
+    && Math.abs(event.clientX - previous.x) < 8
+    && Math.abs(event.clientY - previous.y) < 8);
+}
+
 function interceptedTarget(view: EditorView, event: MouseEvent) {
   const target = event.target instanceof HTMLElement ? event.target : null;
   const line = target?.closest<HTMLElement>(".cm-line");
@@ -12,15 +23,35 @@ function interceptedTarget(view: EditorView, event: MouseEvent) {
 export const livePreviewPointerSelection: Extension = EditorView.mouseSelectionStyle.of((view, event) => {
   if (
     event.button !== 0
-    || event.detail !== 1
+    || event.detail > 2
     || event.altKey
     || event.metaKey
     || event.ctrlKey
     || interceptedTarget(view, event)
   ) return null;
 
-  const initialAnchor = documentPositionAtPointer(view, event.clientX, event.clientY);
+  const previousAnchor = lastPointerAnchors.get(view);
+  const pointerPosition = documentPositionAtPointer(view, event.clientX, event.clientY);
+  const initialAnchor = event.detail === 2 && isSameClickSequence(previousAnchor, event)
+    ? previousAnchor!.position
+    : pointerPosition;
   if (initialAnchor === null) return null;
+  lastPointerAnchors.set(view, {
+    position: initialAnchor,
+    x: event.clientX,
+    y: event.clientY,
+    time: event.timeStamp,
+  });
+
+  if (event.detail === 2) {
+    const word = view.state.wordAt(initialAnchor);
+    if (!word) return null;
+    return {
+      get() { return EditorSelection.single(word.from, word.to); },
+      update() { return false; },
+    };
+  }
+
   let anchor: number = initialAnchor;
   let startSelection: EditorState["selection"] = view.state.selection;
   const extend = event.shiftKey;

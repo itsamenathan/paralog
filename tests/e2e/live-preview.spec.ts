@@ -74,6 +74,18 @@ test("keeps forward and backward drag selections inside wrapped Markdown", async
   );
 });
 
+test("double-click selects the intended word when Live Preview reflows between clicks", async ({ page }) => {
+  const markdown = "## A heading whose hidden markers change its height\n\nTargetword stays under the pointer.\n\nAnother line catches stale clicks.\n";
+  await seedEntry(page, "2098-01-20", markdown);
+
+  await page.locator(".cm-line").filter({ hasText: "A heading whose" }).first().click({ position: { x: 120, y: 12 } });
+  const target = await pointAtTextOffset(page, "Targetword stays", 5);
+  await page.mouse.dblclick(target.x, target.y, { delay: 60 });
+  await page.getByRole("button", { name: "Bold", exact: true }).click();
+
+  expect(await sourceValue(page)).toBe(markdown.replace("Targetword", "**Targetword**"));
+});
+
 test("reveals active syntax without changing Markdown", async ({ page }) => {
   const before = await sourceValue(page);
   const heading = page.locator(".cm-line").filter({ hasText: "Heading with" }).first();
