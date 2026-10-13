@@ -57,6 +57,9 @@ const LiveMarkdownEditor = dynamic(() => import("./live-markdown-editor"), {
 type Entry = {
   content: string;
   exists: boolean;
+  // The server copy this content was written on top of; saves send it back so
+  // the server can refuse to replace writing this device has never seen.
+  version?: string;
   previousYears: string[];
   memories: Memory[];
   template: string;
@@ -251,6 +254,10 @@ export default function Journal() {
     // user just saved looks like a change here without differing on screen, and
     // handing that text back to the editor would move the cursor.
     if (storedMarkdown(remote.content) === storedMarkdown(entryRef.current.content)) {
+      // The text matches, but the next save must build on the server's copy of it.
+      const cached = readCachedEntry(date);
+      if (cached) cacheEntry(date, { ...cached, version: remote.version }, cached.pending);
+      entryRef.current = { ...entryRef.current, version: remote.version };
       setEntry((current) => ({ ...remote, content: current.content }));
       return;
     }
@@ -303,16 +310,16 @@ export default function Journal() {
     }
   }, []);
 
-  const persistEntry = useCallback(async (date: string, content: string, current: Entry) => {
-    const draft = { ...current, content, exists: Boolean(content.trim()) || current.exists };
-    cacheEntry(date, draft, true);
-    // Which day is open is read from the ref rather than the render this callback
-    // was created in: a save started on one day can outlive it, and a response
-    // that arrives after navigating away describes a day nobody is looking at.
-    if (date === selectedRef.current) setSaveState(navigator.onLine ? "saving" : "offline");
-    setDayWords((days) => ({ ...days, [date]: journalWordCount(content) }));
-
+  const sendEntry = useCallback(async (date: string, content: string) => {
     if (!navigator.onLine) return false;
+    // Saves for a day run one at a time. A later save was queued behind this one
+    // when the cached copy has moved on, and choosing the server's copy replaces
+    // it too: either way this content is no longer what should be written.
+    const queued = readCachedEntry(date);
+    if (queued && queued.content !== content) return false;
+    // The base is read only now, after earlier saves for the day have answered,
+    // so a save never reports the copy its own predecessor just replaced.
+    const baseVersion = queued?.version ?? "";
     // Background syncs save other days too; only the open entry describes what the
     // server holds for the entry this comparison protects.
     if (date === selectedRef.current) serverContentRef.current = content;
@@ -320,12 +327,30 @@ export default function Journal() {
       const response = await fetch(`/api/entries?date=${date}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, baseVersion }),
       });
+      if (response.status === 409) {
+        // Someone else wrote this day since this copy was opened. The local writing
+        // stays pending until the user chooses; a day that is not open asks when
+        // it is opened next.
+        const remote = (await response.json()).entry as Entry | undefined;
+        if (date === selectedRef.current && remote) {
+          serverContentRef.current = remote.content;
+          setRemoteUpdate(remote);
+          setSaveState("unsaved");
+        }
+        return false;
+      }
       if (!response.ok) throw new Error("Save failed");
-      cacheEntry(date, draft, false);
+      const { version } = await response.json() as { version?: string };
+      // Writing that arrived while the request was in flight is still pending,
+      // but it now builds on the copy this save produced.
+      const latest = readCachedEntry(date);
+      if (latest && latest.content !== content) cacheEntry(date, { ...latest, version }, latest.pending);
+      else cacheEntry(date, { ...(latest ?? EMPTY_ENTRY), content, exists: true, version }, false);
       if (date === selectedRef.current) {
-        setEntry((value) => ({ ...value, exists: true }));
+        entryRef.current = { ...entryRef.current, exists: true, version };
+        setEntry((value) => ({ ...value, exists: true, version }));
         setRemoteUpdate(null);
         // Keystrokes made while the request was in flight are still unsaved, and
         // clearing the flag for them would drop them from the next autosave.
@@ -341,6 +366,26 @@ export default function Journal() {
       return false;
     }
   }, []);
+
+  const savesInFlightRef = useRef(new Map<string, Promise<boolean>>());
+
+  const persistEntry = useCallback((date: string, content: string, current: Entry) => {
+    // The cached version is the newest copy this device knows the server holds;
+    // the entry passed in can be a render behind a save that just answered.
+    const version = readCachedEntry(date)?.version ?? current.version;
+    cacheEntry(date, { ...current, content, version, exists: Boolean(content.trim()) || current.exists }, true);
+    // Which day is open is read from the ref rather than the render this callback
+    // was created in: a save started on one day can outlive it, and a response
+    // that arrives after navigating away describes a day nobody is looking at.
+    if (date === selectedRef.current) setSaveState(navigator.onLine ? "saving" : "offline");
+    setDayWords((days) => ({ ...days, [date]: journalWordCount(content) }));
+
+    const saves = savesInFlightRef.current;
+    const save = (saves.get(date) ?? Promise.resolve(true)).then(() => sendEntry(date, content));
+    saves.set(date, save);
+    void save.finally(() => { if (saves.get(date) === save) saves.delete(date); });
+    return save;
+  }, [sendEntry]);
 
   const flushDirtyEntry = useCallback(() => {
     if (!dirtyRef.current) return;
@@ -384,13 +429,21 @@ export default function Journal() {
       // entry is kept whether or not it still has writing waiting to be sent.
       const localContent = typed ?? (pending && (pending.pending || offline) ? pending.content : null);
       const localExists = typed === null ? pending?.exists : entryRef.current.exists;
+      // Local writing keeps the version it was written on top of, not the one just
+      // fetched, or a newer server copy would pass for the one it replaces.
+      const localVersion = typed === null ? pending?.version : entryRef.current.version;
       const unsaved = typed !== null || Boolean(pending?.pending);
       const next = localContent === null
         ? remote
-        : { ...remote, content: localContent, exists: Boolean(localContent.trim()) || localExists || remote.exists };
+        : { ...remote, content: localContent, version: localVersion, exists: Boolean(localContent.trim()) || localExists || remote.exists };
       cacheEntry(date, next, unsaved);
+      entryRef.current = next;
       setEntry(next);
       setSaveState(offline ? "offline" : unsaved ? "unsaved" : "saved");
+      // Writing waiting here was based on an older copy than the server now holds,
+      // so sending it would replace writing made elsewhere: ask first.
+      if (!offline && unsaved && localContent !== null && (localVersion ?? "") !== remote.version
+        && storedMarkdown(localContent) !== storedMarkdown(remote.content)) setRemoteUpdate(remote);
     } catch {
       if (!cached) setSaveState("offline");
     } finally {
@@ -872,8 +925,15 @@ export default function Journal() {
   }
 
   function keepLocalUpdate() {
+    if (!remoteUpdate) return;
+    // Keeping this copy is an explicit choice to replace the one just shown, so the
+    // save is made on top of that version.
+    const current = { ...entryRef.current, version: remoteUpdate.version };
+    cacheEntry(selected, current, true);
+    entryRef.current = current;
+    setEntry(current);
     setRemoteUpdate(null);
-    persistEntry(selected, entry.content, entry);
+    void persistEntry(selected, current.content, current);
   }
 
   const statusCopy: Record<SaveState, string> = {
