@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { entries, revisions } from "@/lib/db/schema";
 import { markdownBody } from "@/lib/front-matter";
 import { discoverEntries } from "./discovery";
-import { entryPath } from "./paths";
+import { currentEntryPath, entryPath } from "./paths";
 import { settings } from "./settings";
 import { indexEntryContent } from "./content-index";
 
@@ -38,7 +38,7 @@ export function getEntry(date: string) {
 }
 
 export function saveEntry(date: string, content: string) {
-  const filePath = entryPath(date);
+  const filePath = currentEntryPath(date);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   if (fs.existsSync(filePath)) {
     const previous = fs.readFileSync(filePath, "utf8");
