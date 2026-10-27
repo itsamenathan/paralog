@@ -25,8 +25,13 @@ function sessionKeys(): SessionKeys | null {
 }
 
 export async function isAuthenticated() {
+  // The cookie is read before anything else, even when no session can be valid:
+  // reading it is what tells Next.js the page depends on the request. Without
+  // it, a build run without PARALOG_PASSWORD prerenders the "not configured"
+  // login page and serves it to every visitor of the deployed app.
+  const token = (await cookies()).get(name)?.value;
   const keys = sessionKeys();
-  return Boolean(keys) && verifySessionToken((await cookies()).get(name)?.value, keys!);
+  return Boolean(keys) && verifySessionToken(token, keys!);
 }
 
 export function passwordMatches(password: string) {
