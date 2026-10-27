@@ -95,3 +95,41 @@ test("a save answered after moving on leaves the newly opened day alone", async 
   // from the render the save started in would report its failure here instead.
   await expect(page.locator(".save-control")).toHaveText("Saved");
 });
+
+test("writing saved offline does not replace a newer save from another device", async ({ page, context, browserName }) => {
+  const date = syncDate(browserName);
+  await clickAndFocus(page, page.locator(".cm-line").last());
+  await context.setOffline(true);
+  await page.keyboard.type("Written on the train.");
+  await expect(page.locator(".save-control")).toHaveText("Saved offline");
+
+  // Another device saves on top of the copy it last read.
+  const elsewhere = documentText.replace("Third paragraph", "Edited elsewhere: third paragraph");
+  const { version } = await (await page.request.get(`/api/entries?date=${date}`)).json();
+  expect((await page.request.put(`/api/entries?date=${date}`, { data: { content: elsewhere, baseVersion: version } })).ok()).toBeTruthy();
+
+  await context.setOffline(false);
+  await expect(page.locator(".sync-conflict")).toBeVisible();
+  // Reconnecting asks before anything is written over the other device's save.
+  await page.waitForTimeout(1_500);
+  expect((await (await page.request.get(`/api/entries?date=${date}`)).json()).content).toBe(elsewhere);
+
+  await page.getByRole("button", { name: "Keep mine" }).click();
+  await expect(page.locator(".sync-conflict")).toBeHidden();
+  await expect(page.locator(".save-control")).toHaveText("Saved");
+  expect((await (await page.request.get(`/api/entries?date=${date}`)).json()).content).toContain("Written on the train.");
+});
+
+test("a save made on top of an outdated copy is refused", async ({ page, browserName }) => {
+  const date = syncDate(browserName);
+  const { version } = await (await page.request.get(`/api/entries?date=${date}`)).json();
+  const first = await page.request.put(`/api/entries?date=${date}`, { data: { content: "First device.", baseVersion: version } });
+  expect(first.ok()).toBeTruthy();
+  const stale = await page.request.put(`/api/entries?date=${date}`, { data: { content: "Second device.", baseVersion: version } });
+  expect(stale.status()).toBe(409);
+  expect((await stale.json()).entry.content).toBe("First device.\n");
+  // Retrying a save that already landed is not a conflict.
+  expect((await page.request.put(`/api/entries?date=${date}`, { data: { content: "First device.", baseVersion: version } })).ok()).toBeTruthy();
+  const next = await page.request.put(`/api/entries?date=${date}`, { data: { content: "Second device.", baseVersion: (await first.json()).version } });
+  expect(next.ok()).toBeTruthy();
+});

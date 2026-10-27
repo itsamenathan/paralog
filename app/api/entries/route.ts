@@ -23,7 +23,10 @@ export async function PUT(request: NextRequest) {
   if (!date) return NextResponse.json({ error: "A valid date is required." }, { status: 400 });
   const body = await request.json();
   if (typeof body.content !== "string") return NextResponse.json({ error: "Content must be text." }, { status: 400 });
-  const result = saveEntry(date, body.content);
+  if (body.baseVersion !== undefined && typeof body.baseVersion !== "string") return NextResponse.json({ error: "Base version must be text." }, { status: 400 });
+  const result = saveEntry(date, body.content, body.baseVersion);
+  // The current copy travels with the refusal so the writer can choose between them.
+  if (!result.saved) return NextResponse.json({ error: "This entry changed since it was opened.", conflict: true, entry: getEntry(date) }, { status: 409 });
   publishEntryChange(date);
   return NextResponse.json(result);
 }
