@@ -18,6 +18,7 @@ import { localClock, notificationDue } from "../lib/notifications/clock.ts";
 import { cleanSchedule, validTimezone } from "../lib/notifications/validation.ts";
 import { attachmentPathFromUrl, attachmentReferencesInMarkdown, normalizeAttachmentPath } from "../lib/attachment-references.ts";
 import { entryNeedsContentIndex } from "../lib/content-index-state.ts";
+import { preferredEntryFile } from "../lib/entry-files.ts";
 import { issueSessionToken, SESSION_MAX_AGE_SECONDS, verifySessionToken } from "../lib/session-token.ts";
 import { indexedJournalReferences } from "../lib/entry-journal-references.ts";
 
@@ -483,6 +484,17 @@ test("Live Preview pointer anchors map through document edits", () => {
   const state = EditorState.create({ doc: "before after" });
   const changes = state.changes({ from: 0, insert: "new " });
   assert.equal(mapPointerAnchor(7, changes), 11);
+});
+
+test("duplicate entry files resolve to the newest write, then the path, regardless of walk order", () => {
+  const imported = { path: "/data/imported/2025-03-04.md", mtimeMs: 1_000 };
+  const saved = { path: "/data/2025/03-March/2025-03-04-Tuesday.md", mtimeMs: 2_000 };
+  assert.equal(preferredEntryFile([imported, saved]), saved);
+  assert.equal(preferredEntryFile([saved, imported]), saved);
+  const tied = { ...imported, mtimeMs: 2_000 };
+  assert.equal(preferredEntryFile([tied, saved]), saved);
+  assert.equal(preferredEntryFile([saved, tied]), saved);
+  assert.equal(preferredEntryFile([]), undefined);
 });
 
 test("session tokens expire, and stop working when the password, secret, or generation changes", () => {
