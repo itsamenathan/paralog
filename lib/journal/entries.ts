@@ -2,6 +2,7 @@ import { and, desc, eq, like, lt, notInArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { writeFileAtomic } from "@/lib/atomic-file";
 import { db } from "@/lib/db";
 import { entries, revisions } from "@/lib/db/schema";
 import { markdownBody } from "@/lib/front-matter";
@@ -69,7 +70,7 @@ export function saveEntry(date: string, content: string, baseVersion?: string): 
       db().delete(revisions).where(and(eq(revisions.date, date), notInArray(revisions.id, retained))).run();
     }
   }
-  fs.writeFileSync(filePath, stored, "utf8");
+  writeFileAtomic(filePath, stored);
   const updatedAt = new Date().toISOString();
   db().insert(entries).values({ date, path: filePath, updatedAt }).onConflictDoUpdate({ target: entries.date, set: { path: filePath, updatedAt } }).run();
   indexEntryContent(date, filePath, content);
