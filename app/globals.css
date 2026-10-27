@@ -142,6 +142,9 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
   font-size: 12px;
 }
 .offline-banner span { margin-right: 8px; color: var(--warning); font-weight: 700; }
+.signed-out-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+.signed-out-banner p { margin: 0; }
+.signed-out-banner .save-button { min-height: 34px; font-size: 11px; }
 .sync-conflict {
   margin-bottom: 20px;
   padding: 14px 15px;
@@ -179,7 +182,7 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 .save-control.saving { color: var(--ink); cursor: wait; }
 .save-control.saving i { background: var(--button); animation: pulse 1s infinite alternate; }
 .save-control.unsaved { border-color: color-mix(in srgb, var(--warning) 38%, var(--line)); color: var(--ink); }
-.save-control.unsaved i, .save-control.offline i { background: var(--warning); }
+.save-control.unsaved i, .save-control.offline i, .save-control.signed-out i { background: var(--warning); }
 .save-control:disabled { opacity: 1; }
 @keyframes pulse { to { opacity: .35; } }
 .save-button, .template-button, .text-button {

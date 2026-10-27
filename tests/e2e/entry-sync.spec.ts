@@ -188,3 +188,23 @@ test("a save that landed after its reply was lost is not reported as a conflict"
   await expect(page.locator(".sync-conflict")).toBeHidden();
   expect((await (await page.request.get(`/api/entries?date=${date}`)).json()).content).toContain("Landed without a reply. Then kept writing.");
 });
+
+test("an ended session keeps writing on the device and syncs it after signing in", async ({ page, browserName }) => {
+  const date = syncDate(browserName);
+  await clickAndFocus(page, page.locator(".cm-line").last());
+  // Signing out elsewhere ends every session, including this page's.
+  expect((await page.request.post("/api/auth/logout")).ok()).toBeTruthy();
+  const refused = page.waitForResponse((response) => response.url().includes(`/api/entries?date=${date}`) && response.request().method() === "PUT" && response.status() === 401);
+  await page.keyboard.type("Written after the session ended.");
+  await refused;
+  await expect(page.locator(".save-control")).toHaveText("Signed out");
+  await expect(page.locator(".signed-out-banner")).toBeVisible();
+
+  expect((await page.request.post("/api/auth/login", { data: { password: "paralog" } })).ok()).toBeTruthy();
+  const synced = page.waitForResponse((response) => response.url().includes(`/api/entries?date=${date}`) && response.request().method() === "PUT" && response.ok());
+  await page.locator(".signed-out-banner").getByRole("button", { name: "Sign in" }).click();
+  await synced;
+  await expect(page.locator(".signed-out-banner")).toBeHidden();
+  await expect(page.locator(".save-control")).toHaveText("Saved");
+  expect((await (await page.request.get(`/api/entries?date=${date}`)).json()).content).toContain("Written after the session ended.");
+});
