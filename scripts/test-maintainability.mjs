@@ -19,6 +19,7 @@ import { cleanSchedule, validTimezone } from "../lib/notifications/validation.ts
 import { attachmentPathFromUrl, attachmentReferencesInMarkdown, normalizeAttachmentPath } from "../lib/attachment-references.ts";
 import { entryNeedsContentIndex } from "../lib/content-index-state.ts";
 import { entryFileDate, preferredEntryFile } from "../lib/entry-files.ts";
+import { clearLoginFailures, LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, loginClient, loginRetryAfter, recordLoginFailure } from "../lib/login-throttle.ts";
 import { issueSessionToken, SESSION_MAX_AGE_SECONDS, verifySessionToken } from "../lib/session-token.ts";
 import { indexedJournalReferences } from "../lib/entry-journal-references.ts";
 
@@ -520,4 +521,29 @@ test("entry files are dated Markdown files that are not hidden", () => {
   for (const name of ["._2016-10-22-Saturday.md", ".2016-10-22.md", "2016-10-22.txt", "2016-10-22.md.swp", "notes.md"]) {
     assert.equal(entryFileDate(name), null);
   }
+});
+
+test("login attempts are limited per client over a rolling window", () => {
+  const throttle = new Map();
+  const start = Date.UTC(2026, 9, 27);
+  for (let attempt = 0; attempt < LOGIN_FAILURE_LIMIT; attempt += 1) {
+    assert.equal(loginRetryAfter(throttle, "a", start + attempt), 0);
+    recordLoginFailure(throttle, "a", start + attempt);
+  }
+  const locked = start + LOGIN_FAILURE_LIMIT;
+  assert.equal(loginRetryAfter(throttle, "a", locked), LOGIN_WINDOW_MS - LOGIN_FAILURE_LIMIT);
+  // Another client keeps its own budget.
+  assert.equal(loginRetryAfter(throttle, "b", locked), 0);
+  // The oldest failure ageing out frees one attempt.
+  assert.equal(loginRetryAfter(throttle, "a", start + LOGIN_WINDOW_MS), 0);
+  recordLoginFailure(throttle, "a", start + LOGIN_WINDOW_MS);
+  assert.ok(loginRetryAfter(throttle, "a", start + LOGIN_WINDOW_MS) > 0);
+  clearLoginFailures(throttle, "a");
+  assert.equal(loginRetryAfter(throttle, "a", start + LOGIN_WINDOW_MS), 0);
+});
+
+test("the login client is the address the nearest proxy appended", () => {
+  assert.equal(loginClient(new Headers({ "x-forwarded-for": "6.6.6.6, 203.0.113.9" })), "203.0.113.9");
+  assert.equal(loginClient(new Headers({ "x-real-ip": "203.0.113.9" })), "203.0.113.9");
+  assert.equal(loginClient(new Headers()), "direct");
 });
