@@ -19,6 +19,7 @@ import { cleanSchedule, validTimezone } from "../lib/notifications/validation.ts
 import { attachmentPathFromUrl, attachmentReferencesInMarkdown, normalizeAttachmentPath } from "../lib/attachment-references.ts";
 import { entryNeedsContentIndex } from "../lib/content-index-state.ts";
 import { preferredEntryFile } from "../lib/entry-files.ts";
+import { issueSessionToken, SESSION_MAX_AGE_SECONDS, verifySessionToken } from "../lib/session-token.ts";
 import { indexedJournalReferences } from "../lib/entry-journal-references.ts";
 
 test("attachment paths accept supported URLs and reject unsafe destinations", () => {
@@ -494,4 +495,20 @@ test("duplicate entry files resolve to the newest write, then the path, regardle
   assert.equal(preferredEntryFile([tied, saved]), saved);
   assert.equal(preferredEntryFile([saved, tied]), saved);
   assert.equal(preferredEntryFile([]), undefined);
+});
+
+test("session tokens expire, and stop working when the password, secret, or generation changes", () => {
+  const keys = { secret: "secret", password: "password", generation: 3 };
+  const now = Date.UTC(2026, 9, 13);
+  const token = issueSessionToken(keys, now);
+  assert.equal(verifySessionToken(token, keys, now), true);
+  assert.equal(verifySessionToken(token, keys, now + SESSION_MAX_AGE_SECONDS * 1000), true);
+  assert.equal(verifySessionToken(token, keys, now + (SESSION_MAX_AGE_SECONDS + 1) * 1000), false);
+  assert.equal(verifySessionToken(token, keys, now - 60 * 60 * 1000), false);
+  assert.equal(verifySessionToken(token, { ...keys, generation: 4 }, now), false);
+  assert.equal(verifySessionToken(token, { ...keys, password: "changed" }, now), false);
+  assert.equal(verifySessionToken(token, { ...keys, secret: "changed" }, now), false);
+  const [version, issuedAt, generation, signature] = token.split(".");
+  assert.equal(verifySessionToken([version, Number(issuedAt) + 1, generation, signature].join("."), keys, now), false);
+  for (const value of [undefined, "", "not-a-token", `${token}x`]) assert.equal(verifySessionToken(value, keys, now), false);
 });
