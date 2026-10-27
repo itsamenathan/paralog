@@ -66,7 +66,7 @@ type Entry = {
 };
 type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: string; count?: number };
 type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
-type SaveState = "saved" | "saving" | "unsaved" | "offline";
+type SaveState = "saved" | "saving" | "unsaved" | "offline" | "signed-out";
 type EditorViewMode = "rich" | "source" | "preview";
 type CachedEntry = Entry & { pending: boolean; updatedAt: string };
 type CommandIconName = "edit" | "markdown" | "read" | "focus";
@@ -206,6 +206,9 @@ export default function Journal() {
   const [online, setOnline] = useState(true);
   const [loading, setLoading] = useState(true);
   const [remoteUpdate, setRemoteUpdate] = useState<Entry | null>(null);
+  // The session ended while the journal was open. Writing stays on this device
+  // and syncs once the user signs in again.
+  const [signedOut, setSignedOut] = useState(false);
   const [locationState, setLocationState] = useState<"idle" | "locating" | "looking-up" | "added" | "error">("idle");
   const [locationMessage, setLocationMessage] = useState("");
   const selectedRef = useRef(selected);
@@ -261,7 +264,7 @@ export default function Journal() {
       setEntry((current) => ({ ...remote, content: current.content }));
       return;
     }
-    if (dirtyRef.current || ["saving", "unsaved", "offline"].includes(saveStateRef.current)) {
+    if (dirtyRef.current || ["saving", "unsaved", "offline", "signed-out"].includes(saveStateRef.current)) {
       setRemoteUpdate(remote);
       return;
     }
@@ -277,7 +280,9 @@ export default function Journal() {
       // A failed request is answered from the offline cache, which describes an
       // earlier visit. Synchronizing the open entry from it would replace newer
       // writing with an older copy of itself.
+      if (response.status === 401) setSignedOut(true);
       if (!response.ok || response.headers.has(OFFLINE_RESPONSE)) return;
+      setSignedOut(false);
       applyRemoteEntry(date, await response.json());
     } catch {
       // Regular offline handling owns the connection state.
@@ -329,6 +334,11 @@ export default function Journal() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, baseVersion }),
       });
+      if (response.status === 401) {
+        setSignedOut(true);
+        if (date === selectedRef.current) setSaveState("signed-out");
+        return false;
+      }
       if (response.status === 409) {
         // Someone else wrote this day since this copy was opened. The local writing
         // stays pending until the user chooses; a day that is not open asks when
@@ -342,6 +352,7 @@ export default function Journal() {
         return false;
       }
       if (!response.ok) throw new Error("Save failed");
+      setSignedOut(false);
       const { version } = await response.json() as { version?: string };
       // Writing that arrived while the request was in flight is still pending,
       // but it now builds on the copy this save produced.
@@ -412,7 +423,12 @@ export default function Journal() {
 
     try {
       const response = await fetch(`/api/entries?date=${date}`, { signal });
+      if (response.status === 401) {
+        setSignedOut(true);
+        if (cached?.pending) setSaveState("signed-out");
+      }
       if (!response.ok) return;
+      if (!response.headers.has(OFFLINE_RESPONSE)) setSignedOut(false);
       // An offline copy still opens the day, but nothing about it describes what
       // the server holds, so later comparisons must not be measured against it.
       const offline = response.headers.has(OFFLINE_RESPONSE);
@@ -941,6 +957,7 @@ export default function Journal() {
     saving: "Saving…",
     unsaved: "Unsaved",
     offline: "Saved offline",
+    "signed-out": "Signed out",
   };
   const sourceEditor = (
     <textarea
@@ -986,6 +1003,11 @@ export default function Journal() {
 
       <section className="journal-page">
         {!online && <div className="offline-banner"><span>Offline</span> Keep writing — changes will sync when you reconnect.</div>}
+        {online && signedOut && <div className="offline-banner signed-out-banner" role="alert">
+          <p><span>Signed out</span> Your session ended. Writing stays on this device and syncs after you sign in.</p>
+          {/* Reloading opens the sign-in page; pending writing syncs when the journal opens again. */}
+          <button type="button" className="save-button" onClick={() => location.reload()}>Sign in</button>
+        </div>}
         {remoteUpdate && <section className="sync-conflict" role="alert">
           <div><strong>This entry changed somewhere else.</strong><span>Choose which version to keep before continuing.</span></div>
           <div><button type="button" className="text-button" onClick={keepLocalUpdate}>Keep mine</button><button type="button" className="save-button" onClick={acceptRemoteUpdate}>Load newer version</button></div>
