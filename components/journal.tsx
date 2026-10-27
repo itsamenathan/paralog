@@ -68,7 +68,10 @@ type RevisionDiffLine = { type: "added" | "removed" | "context" | "skip"; text: 
 type RevisionSummary = { id: number; createdAt: string; words: number; diff: { additions: number; deletions: number; lines: RevisionDiffLine[] } };
 type SaveState = "saved" | "saving" | "unsaved" | "offline" | "signed-out";
 type EditorViewMode = "rich" | "source" | "preview";
-type CachedEntry = Entry & { pending: boolean; updatedAt: string };
+// `sent` is the text of a save that left this device without an answer yet. If
+// the page closed before the reply, a server copy matching it is this device's
+// own save, not writing from somewhere else.
+type CachedEntry = Entry & { pending: boolean; updatedAt: string; sent?: string };
 type CommandIconName = "edit" | "markdown" | "read" | "focus";
 
 function CommandIcon({ name }: { name: CommandIconName }) {
@@ -147,11 +150,25 @@ function readCachedEntry(date: string): CachedEntry | null {
   }
 }
 
-function cacheEntry(date: string, entry: Entry, pending: boolean) {
+function cacheEntry(date: string, entry: Entry & { sent?: string }, pending: boolean) {
   localStorage.setItem(
     `${ENTRY_CACHE}${date}`,
     JSON.stringify({ ...entry, pending, updatedAt: new Date().toISOString() }),
   );
+}
+
+// Writing is cached as it is typed, so closing the page before a save starts
+// cannot lose it. The cached version and unanswered save describe the server,
+// which the open entry can be a render behind.
+function cachePendingContent(date: string, current: Entry, content: string) {
+  const cached = readCachedEntry(date);
+  cacheEntry(date, {
+    ...current,
+    content,
+    version: cached?.version ?? current.version,
+    sent: cached?.sent,
+    exists: Boolean(content.trim()) || current.exists,
+  }, true);
 }
 
 function pendingEntries(period: string, onlyPending = false) {
@@ -215,6 +232,11 @@ export default function Journal() {
   const entryRef = useRef(entry);
   const dirtyRef = useRef(dirty);
   const saveStateRef = useRef(saveState);
+  const remoteUpdateRef = useRef(remoteUpdate);
+  const autoSaveRef = useRef(true);
+  // The newest text asked to be saved for each day. A queued save whose text has
+  // been superseded, or replaced by choosing the server's copy, is skipped.
+  const latestSaveRef = useRef(new Map<string, string>());
   const serverContentRef = useRef<string | null>(null);
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const liveEditorRef = useRef<LiveMarkdownEditorHandle | null>(null);
@@ -224,6 +246,8 @@ export default function Journal() {
   entryRef.current = entry;
   dirtyRef.current = dirty;
   saveStateRef.current = saveState;
+  remoteUpdateRef.current = remoteUpdate;
+  autoSaveRef.current = settings?.autoSave !== false;
   const outline = useMemo(() => entryOutline(entry.content), [entry.content]);
   const writingStats = useMemo(() => {
     const body = markdownBody(entry.content);
@@ -317,23 +341,40 @@ export default function Journal() {
 
   const sendEntry = useCallback(async (date: string, content: string) => {
     if (!navigator.onLine) return false;
-    // Saves for a day run one at a time. A later save was queued behind this one
-    // when the cached copy has moved on, and choosing the server's copy replaces
-    // it too: either way this content is no longer what should be written.
-    const queued = readCachedEntry(date);
-    if (queued && queued.content !== content) return false;
-    // The base is read only now, after earlier saves for the day have answered,
-    // so a save never reports the copy its own predecessor just replaced.
-    const baseVersion = queued?.version ?? "";
+    // Saves for a day run one at a time, so a later save can be queued behind this
+    // one; choosing the server's copy also replaces it. Either way this content is
+    // no longer what should be written.
+    if (latestSaveRef.current.get(date) !== content) return false;
     // Background syncs save other days too; only the open entry describes what the
     // server holds for the entry this comparison protects.
     if (date === selectedRef.current) serverContentRef.current = content;
     try {
-      const response = await fetch(`/api/entries?date=${date}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, baseVersion }),
-      });
+      let response: Response;
+      let remote: Entry | undefined;
+      for (let attempt = 0; ; attempt += 1) {
+        // The base is read only now, after earlier saves for the day have answered,
+        // so a save never reports the copy its own predecessor just replaced.
+        const queued = readCachedEntry(date);
+        if (queued) cacheEntry(date, { ...queued, sent: content }, queued.pending);
+        const body = JSON.stringify({ content, baseVersion: queued?.version ?? "" });
+        response = await fetch(`/api/entries?date=${date}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body,
+          // Lets a save started as the page closes finish after it is gone. Browsers
+          // refuse keepalive bodies over 64 KiB; the local copy covers those.
+          keepalive: body.length < 60_000,
+        });
+        if (response.status !== 409) break;
+        remote = (await response.json()).entry as Entry | undefined;
+        // A save that landed after its page closed reads as a change made
+        // elsewhere. Matching what this device last sent proves it was not, so
+        // the save is retried on top of it.
+        const sent = readCachedEntry(date)?.sent;
+        if (attempt > 0 || !remote || sent === undefined || storedMarkdown(sent) !== storedMarkdown(remote.content)) break;
+        const cached = readCachedEntry(date);
+        if (cached) cacheEntry(date, { ...cached, version: remote.version }, cached.pending);
+      }
       if (response.status === 401) {
         setSignedOut(true);
         if (date === selectedRef.current) setSaveState("signed-out");
@@ -343,7 +384,6 @@ export default function Journal() {
         // Someone else wrote this day since this copy was opened. The local writing
         // stays pending until the user chooses; a day that is not open asks when
         // it is opened next.
-        const remote = (await response.json()).entry as Entry | undefined;
         if (date === selectedRef.current && remote) {
           serverContentRef.current = remote.content;
           setRemoteUpdate(remote);
@@ -357,8 +397,8 @@ export default function Journal() {
       // Writing that arrived while the request was in flight is still pending,
       // but it now builds on the copy this save produced.
       const latest = readCachedEntry(date);
-      if (latest && latest.content !== content) cacheEntry(date, { ...latest, version }, latest.pending);
-      else cacheEntry(date, { ...(latest ?? EMPTY_ENTRY), content, exists: true, version }, false);
+      if (latest && latest.content !== content) cacheEntry(date, { ...latest, version, sent: undefined }, latest.pending);
+      else cacheEntry(date, { ...(latest ?? EMPTY_ENTRY), content, exists: true, version, sent: undefined }, false);
       if (date === selectedRef.current) {
         entryRef.current = { ...entryRef.current, exists: true, version };
         setEntry((value) => ({ ...value, exists: true, version }));
@@ -381,10 +421,8 @@ export default function Journal() {
   const savesInFlightRef = useRef(new Map<string, Promise<boolean>>());
 
   const persistEntry = useCallback((date: string, content: string, current: Entry) => {
-    // The cached version is the newest copy this device knows the server holds;
-    // the entry passed in can be a render behind a save that just answered.
-    const version = readCachedEntry(date)?.version ?? current.version;
-    cacheEntry(date, { ...current, content, version, exists: Boolean(content.trim()) || current.exists }, true);
+    cachePendingContent(date, current, content);
+    latestSaveRef.current.set(date, content);
     // Which day is open is read from the ref rather than the render this callback
     // was created in: a save started on one day can outlive it, and a response
     // that arrives after navigating away describes a day nobody is looking at.
@@ -447,11 +485,14 @@ export default function Journal() {
       const localExists = typed === null ? pending?.exists : entryRef.current.exists;
       // Local writing keeps the version it was written on top of, not the one just
       // fetched, or a newer server copy would pass for the one it replaces.
-      const localVersion = typed === null ? pending?.version : entryRef.current.version;
+      // A save sent just before the page closed may have landed unanswered, in
+      // which case the server's copy is this device's own and the base moves to it.
+      const ownSave = !offline && pending?.sent !== undefined && storedMarkdown(pending.sent) === storedMarkdown(remote.content);
+      const localVersion = ownSave ? remote.version : typed === null ? pending?.version : entryRef.current.version;
       const unsaved = typed !== null || Boolean(pending?.pending);
       const next = localContent === null
         ? remote
-        : { ...remote, content: localContent, version: localVersion, exists: Boolean(localContent.trim()) || localExists || remote.exists };
+        : { ...remote, content: localContent, version: localVersion, sent: ownSave ? undefined : pending?.sent, exists: Boolean(localContent.trim()) || localExists || remote.exists };
       cacheEntry(date, next, unsaved);
       entryRef.current = next;
       setEntry(next);
@@ -719,6 +760,29 @@ export default function Journal() {
     return () => window.removeEventListener("keydown", saveWithKeyboard);
   }, [loading, persistEntry]);
 
+  // Mobile browsers can end a page without warning once it is hidden, so writing
+  // is sent then instead of after the autosave pause.
+  useEffect(() => {
+    const flush = () => {
+      const date = selectedRef.current;
+      const current = entryRef.current;
+      if (!dirtyRef.current || !autoSaveRef.current || remoteUpdateRef.current || latestSaveRef.current.get(date) === current.content) return;
+      void persistEntry(date, current.content, current);
+    };
+    const flushWhenHidden = () => { if (document.visibilityState === "hidden") flush(); };
+    const confirmUnsaved = (event: BeforeUnloadEvent) => {
+      if (dirtyRef.current && !autoSaveRef.current) event.preventDefault();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    window.addEventListener("beforeunload", confirmUnsaved);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+      window.removeEventListener("beforeunload", confirmUnsaved);
+    };
+  }, [persistEntry]);
+
   const resizeSourceEditor = useCallback((target?: HTMLTextAreaElement | null) => {
     const editor = target ?? sourceEditorRef.current;
     if (!editor) return;
@@ -763,6 +827,9 @@ export default function Journal() {
     // to tell them a keystroke has already happened.
     entryRef.current = { ...entryRef.current, content };
     dirtyRef.current = true;
+    // With autosave off, writing is only sent when the user saves, so it is not
+    // queued for the next sync either; leaving the page asks first instead.
+    if (autoSaveRef.current) cachePendingContent(selectedRef.current, entryRef.current, content);
     setEntry((current) => ({ ...current, content }));
     setDirty(true);
     setSaveState("unsaved");
@@ -932,6 +999,7 @@ export default function Journal() {
 
   function acceptRemoteUpdate() {
     if (!remoteUpdate) return;
+    latestSaveRef.current.delete(selected);
     cacheEntry(selected, remoteUpdate, false);
     serverContentRef.current = remoteUpdate.content;
     setEntry(remoteUpdate);
