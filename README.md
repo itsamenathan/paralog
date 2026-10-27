@@ -26,7 +26,9 @@ Open [http://localhost:3000](http://localhost:3000). Journal data defaults to `.
 docker compose up --build -d
 ```
 
-The `./data` directory is mounted into the container at `/data`, holding both `journal.db`, uploads, settings, and Markdown entries. Back up this directory to back up Paralog. Set `PARALOG_PASSWORD` and a long random `PARALOG_AUTH_SECRET` in a `.env` file before launching Docker.
+The `./data` directory is mounted into the container at `/data`, holding both `journal.db`, uploads, settings, and Markdown entries. Back up this directory to back up Paralog. Set `PARALOG_PASSWORD` and a long random `PARALOG_AUTH_SECRET` in a `.env` file before launching Docker. Compose refuses to start without both; generate the secret with `openssl rand -base64 32`. The secret signs session cookies, so anyone who knows it can sign in without the password: keep it private and never reuse an example value.
+
+Sessions last 30 days. Signing out ends the session on every device, and changing `PARALOG_PASSWORD` or `PARALOG_AUTH_SECRET` signs every device out.
 
 Pending database migrations run automatically before Paralog begins serving requests, including after a Docker image upgrade. Migration files are bundled into the production image while the database remains on the persistent `/data` volume. When changing the database schema during development, run `npm run db:generate` and commit the generated files under `drizzle/`; use `npm run db:check` to validate the migration history.
 
