@@ -133,3 +133,58 @@ test("a save made on top of an outdated copy is refused", async ({ page, browser
   const next = await page.request.put(`/api/entries?date=${date}`, { data: { content: "Second device.", baseVersion: (await first.json()).version } });
   expect(next.ok()).toBeTruthy();
 });
+
+test("writing typed just before the page closes survives a failed save", async ({ page, browserName }) => {
+  const date = syncDate(browserName);
+  await page.route(`**/api/entries?date=${date}`, (route) => route.request().method() === "PUT" ? route.abort() : route.continue());
+  await clickAndFocus(page, page.locator(".cm-line").last());
+  await page.keyboard.type("Typed right before closing.");
+  // Reloading inside the autosave pause, while every save fails.
+  await page.reload();
+  await expect(page.locator(".cm-line").filter({ hasText: "Typed right before closing." }).first()).toBeVisible();
+
+  await page.unroute(`**/api/entries?date=${date}`);
+  const synced = page.waitForResponse((response) => response.url().includes(`/api/entries?date=${date}`) && response.request().method() === "PUT" && response.ok());
+  await page.reload();
+  await synced;
+  await expect(page.locator(".save-control")).toHaveText("Saved");
+  expect((await (await page.request.get(`/api/entries?date=${date}`)).json()).content).toContain("Typed right before closing.");
+});
+
+test("leaving the page sends writing without waiting for the autosave pause", async ({ page, browserName }) => {
+  const date = syncDate(browserName);
+  await clickAndFocus(page, page.locator(".cm-line").last());
+  await page.keyboard.type("Sent on the way out.");
+  const started = Date.now();
+  const save = page.waitForRequest((request) => request.url().includes(`/api/entries?date=${date}`) && request.method() === "PUT");
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
+  expect((await save).postDataJSON().content).toContain("Sent on the way out.");
+  expect(Date.now() - started).toBeLessThan(600);
+});
+
+test("a save that landed after its reply was lost is not reported as a conflict", async ({ page, browserName }) => {
+  const date = syncDate(browserName);
+  // The first save reaches the server, but its reply never arrives, as when the
+  // page closes mid-request. Later saves queue behind it and are never sent.
+  let landed = 0;
+  await page.route(`**/api/entries?date=${date}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    landed += 1;
+    await route.fetch();
+    await new Promise(() => {});
+  });
+  await clickAndFocus(page, page.locator(".cm-line").last());
+  await page.keyboard.type("Landed without a reply.");
+  await expect.poll(() => landed).toBe(1);
+  await page.keyboard.type(" Then kept writing.");
+  await expect.poll(async () => (await (await page.request.get(`/api/entries?date=${date}`)).json()).content).toContain("Landed without a reply.");
+
+  await page.unroute(`**/api/entries?date=${date}`);
+  await page.reload();
+  await expect(page.locator(".cm-line").filter({ hasText: "Then kept writing." }).first()).toBeVisible();
+  // The server's copy is this device's own save, so the later writing is sent on
+  // top of it rather than offered as a choice between two versions.
+  await expect(page.locator(".save-control")).toHaveText("Saved");
+  await expect(page.locator(".sync-conflict")).toBeHidden();
+  expect((await (await page.request.get(`/api/entries?date=${date}`)).json()).content).toContain("Landed without a reply. Then kept writing.");
+});

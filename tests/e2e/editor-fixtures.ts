@@ -9,12 +9,24 @@ export async function authenticate(page: Page) {
 export async function seedEntry(page: Page, date: string, content: string) {
   // Disconnect the open entry before replacing its server-side fixture. Otherwise
   // the synchronization channel correctly reports the fixture reset as a remote
-  // edit and presents the conflict UI.
-  await page.goto("about:blank");
+  // edit and presents the conflict UI. Leaving sends any writing still waiting,
+  // so the reset waits for that save to land rather than racing it. The page
+  // left on is outside the app but shares its origin, so the writing the app
+  // cached locally can be cleared too: reopening would otherwise rightly offer
+  // it as a conflict with the fixture.
+  await page.goto("/icon.svg");
+  await page.waitForTimeout(500);
   const response = await page.request.put(`/api/entries?date=${date}`, {
     data: { content },
   });
   expect(response.ok()).toBeTruthy();
+  await page.evaluate(() => {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("paralog:entry:") || key.startsWith("paralog:calendar:")) localStorage.removeItem(key);
+    }
+  });
+  // Reopening from a blank page keeps load timing the same as a fresh visit.
+  await page.goto("about:blank");
   await page.goto(`/?date=${date}`);
   await expect(page.locator(".live-editor-host .cm-editor")).toBeVisible();
   await expect(page.locator(".cm-line").filter({ hasText: content.split("\n").find((line) => line.length > 20) ?? "" }).first()).toBeVisible();
