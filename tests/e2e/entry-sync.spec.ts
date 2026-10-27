@@ -208,3 +208,41 @@ test("an ended session keeps writing on the device and syncs it after signing in
   await expect(page.locator(".save-control")).toHaveText("Saved");
   expect((await (await page.request.get(`/api/entries?date=${date}`)).json()).content).toContain("Written after the session ended.");
 });
+
+const cachedEntries = (page: Page) => page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("paralog:entry:") || key.startsWith("paralog:calendar:")));
+
+test("signing out removes journal text cached on the device", async ({ page }) => {
+  expect((await cachedEntries(page)).length).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Sign out" }).first().click();
+  await expect(page.locator("input[type=password]")).toBeVisible();
+  expect(await cachedEntries(page)).toEqual([]);
+});
+
+test("signing out with unsynced writing asks first and keeps that writing", async ({ page, browserName }) => {
+  const date = syncDate(browserName);
+  await page.route(`**/api/entries?date=${date}`, (route) => route.request().method() === "PUT"
+    ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable" }) })
+    : route.continue());
+  await clickAndFocus(page, page.locator(".cm-line").last());
+  await page.keyboard.type("Not synced yet.");
+  await expect(page.locator(".save-control")).toHaveText("Saved offline");
+
+  // Declining keeps the session.
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Sign out" }).first().click();
+  await expect(page.locator(".live-editor-host .cm-editor")).toBeVisible();
+  expect((await page.request.get(`/api/entries?date=${date}`)).ok()).toBeTruthy();
+
+  page.once("dialog", (dialog) => { expect(dialog.message()).toContain("1 entry hasn’t synced yet"); void dialog.accept(); });
+  await page.getByRole("button", { name: "Sign out" }).first().click();
+  await expect(page.locator("input[type=password]")).toBeVisible();
+  // Only the unsynced day is left on the device.
+  expect(await cachedEntries(page)).toEqual([`paralog:entry:${date}`]);
+
+  await page.unroute(`**/api/entries?date=${date}`);
+  const synced = page.waitForResponse((response) => response.url().includes(`/api/entries?date=${date}`) && response.request().method() === "PUT" && response.ok());
+  await page.locator("input[type=password]").fill("paralog");
+  await page.keyboard.press("Enter");
+  await synced;
+  expect((await (await page.request.get(`/api/entries?date=${date}`)).json()).content).toContain("Not synced yet.");
+});

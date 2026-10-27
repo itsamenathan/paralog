@@ -183,6 +183,30 @@ function pendingEntries(period: string, onlyPending = false) {
   return entries;
 }
 
+function cachedEntryDates() {
+  return Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+    .filter((key): key is string => Boolean(key?.startsWith(ENTRY_CACHE)))
+    .map((key) => key.slice(ENTRY_CACHE.length));
+}
+
+// Signing out leaves no journal text readable on this device, apart from
+// writing that has not synced yet, which would otherwise be lost.
+async function clearPrivateCache() {
+  for (const date of cachedEntryDates()) {
+    if (!readCachedEntry(date)?.pending) localStorage.removeItem(`${ENTRY_CACHE}${date}`);
+  }
+  for (const key of Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))) {
+    if (key?.startsWith(CALENDAR_CACHE)) localStorage.removeItem(key);
+  }
+  // The service worker keeps offline copies of entries and attachments. The page
+  // removes them itself so the reload that follows cannot race the cleanup.
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key.startsWith("paralog-runtime")).map((key) => caches.delete(key)));
+  } catch { /* No Cache Storage outside a secure context. */ }
+  navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_PRIVATE" });
+}
+
 function currentPosition() {
   return new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, {
     enableHighAccuracy: false,
@@ -509,10 +533,7 @@ export default function Journal() {
   }, []);
 
   const syncPending = useCallback(async () => {
-    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-      .filter((key): key is string => Boolean(key?.startsWith(ENTRY_CACHE)));
-    for (const key of keys) {
-      const date = key.slice(ENTRY_CACHE.length);
+    for (const date of cachedEntryDates()) {
       const cached = readCachedEntry(date);
       if (!cached?.pending) continue;
       await persistEntry(date, cached.content, cached);
@@ -991,9 +1012,14 @@ export default function Journal() {
   }
 
   async function signOut() {
+    // Writing still waiting is sent while the session can still save it.
+    if (dirtyRef.current) await persistEntry(selectedRef.current, entryRef.current.content, entryRef.current);
+    if (navigator.onLine) await syncPending();
+    const unsynced = cachedEntryDates().filter((date) => readCachedEntry(date)?.pending);
+    if (unsynced.length && !window.confirm(`${unsynced.length === 1 ? "1 entry hasn’t" : `${unsynced.length} entries haven’t`} synced yet. Sign out anyway? Unsynced writing stays on this device and syncs after you sign in again.`)) return;
     try { await unsubscribeCurrentDevice(); } catch { /* Signing out still clears the authenticated session. */ }
     await fetch("/api/auth/logout", { method: "POST" });
-    navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_PRIVATE" });
+    await clearPrivateCache();
     location.reload();
   }
 
