@@ -60,22 +60,42 @@ function offlineFallback(response) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+// Attachments larger than this are still served, but not kept for offline use:
+// a handful of videos would otherwise fill the device's storage quota.
+const MAX_CACHED_FILE_BYTES = 10 * 1024 * 1024;
+
+function cacheable(request, response) {
+  // The Cache API only stores complete responses; partial content makes it throw.
+  if (response.status !== 200) return false;
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/files") && !url.pathname.startsWith("/attachments/")) return true;
+  const length = Number(response.headers.get("Content-Length"));
+  return Number.isFinite(length) && length > 0 && length <= MAX_CACHED_FILE_BYTES;
+}
+
 async function networkFirst(request, fallback) {
   const cache = await caches.open(RUNTIME_CACHE);
+  let response;
   try {
-    const response = await fetch(request);
-    if (response.ok) {
+    response = await fetch(request);
+  } catch {
+    // Media players and PDF viewers ask for byte ranges; a complete cached copy
+    // still answers them, as a server without range support would.
+    const cached = (await cache.match(request.url)) || (await caches.match(fallback || request.url));
+    return offlineFallback(cached) || Response.error();
+  }
+  // Keeping an offline copy is best-effort. A failure here must not turn a
+  // response the network already delivered into an error.
+  try {
+    if (cacheable(request, response)) {
       await cache.put(request, response.clone());
       if (request.mode === "navigate") {
         await cache.put("/", response.clone());
         await cachePageAssets(response.clone());
       }
     }
-    return response;
-  } catch {
-    const cached = (await cache.match(request)) || (await caches.match(fallback || request));
-    return offlineFallback(cached) || Response.error();
-  }
+  } catch { /* The next request can store it. */ }
+  return response;
 }
 
 async function cachePageAssets(response) {
@@ -107,6 +127,14 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname === "/api/entries/events") {
     event.respondWith(fetch(request));
+    return;
+  }
+
+  // Byte-range requests come from media players and PDF viewers. Partial
+  // responses cannot be cached, so they go to the network, falling back to a
+  // complete offline copy when there is one.
+  if (request.headers.has("range")) {
+    event.respondWith(fetch(request).catch(async () => offlineFallback(await caches.match(request.url)) || Response.error()));
     return;
   }
 
