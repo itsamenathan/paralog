@@ -18,7 +18,7 @@ import { localClock, notificationDue } from "../lib/notifications/clock.ts";
 import { cleanSchedule, validTimezone } from "../lib/notifications/validation.ts";
 import { attachmentPathFromUrl, attachmentReferencesInMarkdown, normalizeAttachmentPath } from "../lib/attachment-references.ts";
 import { entryNeedsContentIndex } from "../lib/content-index-state.ts";
-import { preferredEntryFile } from "../lib/entry-files.ts";
+import { entryFileDate, preferredEntryFile } from "../lib/entry-files.ts";
 import { issueSessionToken, SESSION_MAX_AGE_SECONDS, verifySessionToken } from "../lib/session-token.ts";
 import { indexedJournalReferences } from "../lib/entry-journal-references.ts";
 
@@ -511,4 +511,13 @@ test("session tokens expire, and stop working when the password, secret, or gene
   const [version, issuedAt, generation, signature] = token.split(".");
   assert.equal(verifySessionToken([version, Number(issuedAt) + 1, generation, signature].join("."), keys, now), false);
   for (const value of [undefined, "", "not-a-token", `${token}x`]) assert.equal(verifySessionToken(value, keys, now), false);
+});
+
+test("entry files are dated Markdown files that are not hidden", () => {
+  assert.equal(entryFileDate("2016-10-22-Saturday.md"), "2016-10-22");
+  assert.equal(entryFileDate("notes 2016-10-22.md"), "2016-10-22");
+  // macOS AppleDouble metadata and other hidden files share the dated name.
+  for (const name of ["._2016-10-22-Saturday.md", ".2016-10-22.md", "2016-10-22.txt", "2016-10-22.md.swp", "notes.md"]) {
+    assert.equal(entryFileDate(name), null);
+  }
 });
