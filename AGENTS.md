@@ -84,8 +84,8 @@ agent-browser close
 
 ## Observability
 
-- Traces and logs go through the OpenTelemetry SDK (`instrumentation.node.ts`) to the ClickStack OTLP/HTTP collector. Configuration is the standard `OTEL_*` environment variables; with no endpoint set the SDK stays off.
-- Log through `lib/log.ts`, not `console`: it writes to stdout (Docker collects it) and emits an OpenTelemetry log record in the same call.
+- Traces go through the OpenTelemetry SDK (`instrumentation.node.ts`) to the ClickStack OTLP/HTTP collector. Configuration is the standard `OTEL_*` environment variables; with no endpoint set the SDK stays off.
+- Log through `lib/log.ts`, not `console`. It writes JSON lines to stdout (Docker and the host collector read them) and adds `trace_id`/`span_id` inside a request. SDK log export is off unless `OTEL_LOGS_EXPORTER` is set, because the host collector already ships stdout and exporting both stores every line twice.
 - Never hard-code or commit the ingestion key; it lives in OpenBao `prod/observability` (`HYPERDX_INGESTION_KEY`).
 
 ## UI conventions

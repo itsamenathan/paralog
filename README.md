@@ -36,7 +36,7 @@ Notification signing keys are generated automatically and retained in `journal.d
 
 ## Observability
 
-Paralog exports traces and logs with the OpenTelemetry SDK over OTLP/HTTP. Export is off until an endpoint is set, so local development and tests send nothing. Set the standard OpenTelemetry variables to turn it on:
+Paralog exports traces with the OpenTelemetry SDK over OTLP/HTTP. Export is off until an endpoint is set, so local development and tests send nothing. Set the standard OpenTelemetry variables to turn it on:
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=http://clickstack-collector.example:4318
@@ -44,9 +44,13 @@ OTEL_EXPORTER_OTLP_HEADERS=authorization=your-ingestion-key
 # OTEL_SERVICE_NAME=paralog
 ```
 
-Replace `clickstack-collector.example:4318` with the OTLP/HTTP address of your collector (ClickStack, which stores traces and logs in ClickHouse). The ingestion key is `HYPERDX_INGESTION_KEY` in OpenBao `prod/observability`; keep it in `.env` and out of Git. Set `OTEL_SDK_DISABLED=true` to switch export off again. Restart Paralog after changing any of these.
+Replace `clickstack-collector.example:4318` with the OTLP/HTTP address of your collector (ClickStack, which stores traces and logs in ClickHouse). The ingestion key is `HYPERDX_INGESTION_KEY` in OpenBao `prod/observability`; keep it in `.env` and out of Git. Set `OTEL_SDK_DISABLED=true` to switch export off again, and restart Paralog after changing any of these. Other `OTEL_*` variables, such as `OTEL_EXPORTER_OTLP_PROTOCOL` or `OTEL_TRACES_EXPORTER`, are honored too.
 
-Next.js produces the request spans, including route handlers. Application logs go through `lib/log.ts`: every message is written to stdout as before, and also sent as an OpenTelemetry log record that carries the active trace and span IDs. Use `log` instead of `console` for anything you want in ClickStack. Output from Next.js itself and from libraries still reaches stdout only. Uncaught request errors are logged with their route.
+Next.js produces the request spans, including route handlers.
+
+Logs go to stdout as one JSON object per line (`level`, `time`, `msg`, extra fields, and a serialized `err` for errors), written through `lib/log.ts`. Lines logged inside a request also carry `trace_id`, `span_id` and `trace_flags`, so a log collector that reads stdout can match them to the request's trace. Set `PARALOG_LOG_LEVEL` (`debug`, `info`, `warn`, `error`; default `info`) to change the threshold. Uncaught request errors are logged the same way, with their route.
+
+The SDK does not export logs by default, because a collector that already reads container output would store every line twice. Set `OTEL_LOGS_EXPORTER=otlp` to send them through the SDK as well, for example when nothing collects stdout. Output from Next.js itself and from libraries is not JSON and is not exported.
 
 ## Entry metadata and location
 

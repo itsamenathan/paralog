@@ -14,17 +14,15 @@
     "test:properties": "node --no-warnings --test scripts/test-property-icons.mjs",
     "test:e2e": "playwright test",
     "test:production": "node --no-warnings --test --test-timeout=600000 scripts/test-production.mjs",
-    "test": "npm run test:migrations && npm run test:widgets && npm run test:features && npm run test:properties"
+    "test:log": "node --no-warnings --test scripts/test-log.mjs",
+    "test": "npm run test:migrations && npm run test:widgets && npm run test:features && npm run test:properties && npm run test:log"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "6.5.0",
     "@codemirror/language": "6.12.4",
     "@lezer/common": "1.5.2",
     "@opentelemetry/api": "1.10.0",
-    "@opentelemetry/exporter-logs-otlp-http": "0.300.0",
-    "@opentelemetry/exporter-trace-otlp-http": "0.300.0",
     "@opentelemetry/resources": "3.0.0",
-    "@opentelemetry/sdk-logs": "3.0.0",
     "@opentelemetry/sdk-node": "0.300.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
     "@replit/codemirror-vim": "6.3.0",
@@ -34,6 +32,7 @@
     "drizzle-orm": "^0.45.2",
     "lucide": "^1.27.0",
     "next": "16.2.10",
+    "pino": "10.4.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-markdown": "10.1.0",
