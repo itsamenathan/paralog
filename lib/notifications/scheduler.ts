@@ -5,6 +5,7 @@ import { getEntry } from "@/lib/journal/entries";
 import { sendPush } from "./push";
 import { notificationSettings } from "./settings";
 import { localClock, notificationDue } from "./clock";
+import { log } from "@/lib/log";
 
 export async function runNotificationScheduler(now = new Date()) {
   const { notificationTimezone, notificationSchedules } = notificationSettings();
@@ -32,7 +33,7 @@ export async function runNotificationScheduler(now = new Date()) {
       } catch (error) {
         const statusCode = (error as { statusCode?: number }).statusCode;
         if (statusCode === 404 || statusCode === 410) db().delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, row.endpoint)).run();
-        else console.error("Paralog reminder delivery failed", error);
+        else log.error("Paralog reminder delivery failed", error);
       }
     }
   }
@@ -41,8 +42,8 @@ export async function runNotificationScheduler(now = new Date()) {
 export function startNotificationScheduler() {
   const state = globalThis as typeof globalThis & { __paralogNotificationScheduler?: ReturnType<typeof setInterval> };
   if (state.__paralogNotificationScheduler) return;
-  void runNotificationScheduler().catch((error) => console.error("Paralog reminder scheduler failed", error));
+  void runNotificationScheduler().catch((error) => log.error("Paralog reminder scheduler failed", error));
   state.__paralogNotificationScheduler = setInterval(() => {
-    void runNotificationScheduler().catch((error) => console.error("Paralog reminder scheduler failed", error));
+    void runNotificationScheduler().catch((error) => log.error("Paralog reminder scheduler failed", error));
   }, 60_000);
 }
