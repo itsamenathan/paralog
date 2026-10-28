@@ -29,7 +29,10 @@ export async function seedEntry(page: Page, date: string, content: string) {
   await page.goto("about:blank");
   await page.goto(`/?date=${date}`);
   await expect(page.locator(".live-editor-host .cm-editor")).toBeVisible();
-  await expect(page.locator(".cm-line").filter({ hasText: content.split("\n").find((line) => line.length > 20) ?? "" }).first()).toBeVisible();
+  // Live Preview hides heading, quote, and list markers on every line but the
+  // one holding the cursor, so the rendered line is matched without them.
+  const sample = content.split("\n").find((line) => line.length > 20)?.replace(/^(#{1,6}\s+|>\s+|[-*+]\s+(\[[ xX]\]\s+)?)/, "") ?? "";
+  await expect(page.locator(".cm-line").filter({ hasText: sample }).first()).toBeVisible();
 }
 
 export async function sourceValue(page: Page) {

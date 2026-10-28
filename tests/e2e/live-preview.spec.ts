@@ -100,9 +100,12 @@ test("reveals active syntax without changing Markdown", async ({ page }) => {
 
 test("continues Markdown lists without rewriting lowercase input", async ({ page, browserName }) => {
   await seedEntry(page, browserName === "webkit" ? "2098-01-16" : "2098-01-15", "* Test");
+  // The entry opens with the cursor on the empty line after the list, where the
+  // item renders as a bullet rather than its "* " marker.
+  const item = page.locator(".cm-line").filter({ hasText: "Test" }).first();
   await clickInEditor(page, async () => {
-    const [rect] = await lineTextRects(page, "* Test");
-    return { x: Math.min(rect.right + 100, 500), y: rect.top + rect.height / 2 };
+    const rect = (await item.boundingBox())!;
+    return { x: Math.min(rect.x + rect.width - 4, 500), y: rect.y + rect.height / 2 };
   });
   await page.keyboard.press("Enter");
   await expect(page.locator(".cm-content")).toHaveAttribute("autocapitalize", "sentences");
@@ -122,9 +125,13 @@ test("places the caret at the start of heading text", async ({ page }) => {
 test("cycles heading levels without starting at heading two", async ({ page }) => {
   await seedEntry(page, "2098-01-10", "A heading in progress");
   await clickInEditor(page, () => pointAtTextOffset(page, "A heading in progress", 5));
+  const heading = page.locator(".cm-line").filter({ hasText: "A heading in progress" }).first();
   await page.getByRole("button", { name: "Increase heading level" }).click();
-  expect(await sourceValue(page)).toBe("# A heading in progress\n");
+  // Reading the source remounts the editor and moves the cursor, so the first
+  // level is read from the rendered line instead.
+  await expect(heading).toHaveClass(/cm-live-h1/);
   await page.getByRole("button", { name: "Increase heading level" }).click();
+  await expect(heading).toHaveClass(/cm-live-h2/);
   expect(await sourceValue(page)).toBe("## A heading in progress\n");
 });
 

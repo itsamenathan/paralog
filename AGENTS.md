@@ -28,6 +28,8 @@ Paralog is a single-user, self-hosted Next.js journal. The app uses the App Rout
 - `mise run install` installs the locked npm dependencies.
 - `mise run dev` starts Next.js on `0.0.0.0`.
 - `mise run build` is the required verification command after code changes.
+- `mise run test` runs the unit tests; `mise run test:e2e` runs the Playwright suite against a dev server (set `PARALOG_E2E_PORT` when port 3000 is taken).
+- `mise run test:production` builds the app the way the Docker image does (without credentials) and checks the production server against a data directory with real-world clutter: macOS `._` AppleDouble files, hidden folders, duplicate dates, and hand-placed files. Run it after changes to authentication, page rendering, or entry discovery and storage; the dev-server e2e suite cannot catch prerendered pages or filesystem surprises.
 - `mise run start` serves the production build.
 - `mise run browser -- <command>` drives the app in a real browser (see Browser testing).
 - `docker compose up --build -d` is the self-hosted deployment path.
