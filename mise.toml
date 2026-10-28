@@ -21,6 +21,10 @@ run = "npm test"
 description = "Run Live Preview browser interaction tests"
 run = "npm run test:e2e"
 
+[tasks."test:production"]
+description = "Build like the Docker image and check the production server against realistic journal data"
+run = "npm run test:production"
+
 [tasks.start]
 description = "Serve the production build"
 run = "npm run start"

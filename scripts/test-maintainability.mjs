@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -20,6 +22,7 @@ import { attachmentPathFromUrl, attachmentReferencesInMarkdown, normalizeAttachm
 import { entryNeedsContentIndex } from "../lib/content-index-state.ts";
 import { entryFileDate, preferredEntryFile } from "../lib/entry-files.ts";
 import { clearLoginFailures, LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, loginClient, loginRetryAfter, recordLoginFailure } from "../lib/login-throttle.ts";
+import { writeFileAtomic } from "../lib/atomic-file.ts";
 import { issueSessionToken, SESSION_MAX_AGE_SECONDS, verifySessionToken } from "../lib/session-token.ts";
 import { indexedJournalReferences } from "../lib/entry-journal-references.ts";
 
@@ -546,4 +549,38 @@ test("the login client is the address the nearest proxy appended", () => {
   assert.equal(loginClient(new Headers({ "x-forwarded-for": "6.6.6.6, 203.0.113.9" })), "203.0.113.9");
   assert.equal(loginClient(new Headers({ "x-real-ip": "203.0.113.9" })), "203.0.113.9");
   assert.equal(loginClient(new Headers()), "direct");
+});
+
+test("atomic writes replace a file whole, keep its permissions, and follow symlinks", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "paralog-atomic-"));
+  try {
+    const entry = path.join(directory, "2026-10-27-Tuesday.md");
+    writeFileAtomic(entry, "First draft.\n");
+    assert.equal(fs.readFileSync(entry, "utf8"), "First draft.\n");
+
+    fs.chmodSync(entry, 0o640);
+    writeFileAtomic(entry, "Second draft.\n");
+    assert.equal(fs.readFileSync(entry, "utf8"), "Second draft.\n");
+    assert.equal(fs.statSync(entry).mode & 0o777, 0o640);
+
+    const link = path.join(directory, "linked.md");
+    fs.symlinkSync(entry, link);
+    writeFileAtomic(link, "Through the link.\n");
+    assert.ok(fs.lstatSync(link).isSymbolicLink());
+    assert.equal(fs.readFileSync(entry, "utf8"), "Through the link.\n");
+
+    // Nothing is left behind for discovery to find.
+    assert.deepEqual(fs.readdirSync(directory).sort(), ["2026-10-27-Tuesday.md", "linked.md"]);
+
+    // A write that cannot finish leaves the entry as it was and says so.
+    fs.chmodSync(directory, 0o500);
+    try {
+      assert.throws(() => writeFileAtomic(entry, "Lost?\n"));
+    } finally {
+      fs.chmodSync(directory, 0o700);
+    }
+    assert.equal(fs.readFileSync(entry, "utf8"), "Through the link.\n");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
