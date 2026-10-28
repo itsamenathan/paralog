@@ -82,6 +82,12 @@ agent-browser close
 - Keep path traversal protections for configurable paths and file-serving routes.
 - Use `PARALOG_PASSWORD` and `PARALOG_AUTH_SECRET` for authentication configuration; do not hard-code credentials.
 
+## Observability
+
+- Traces and logs go through the OpenTelemetry SDK (`instrumentation.node.ts`) to the ClickStack OTLP/HTTP collector. Configuration is the standard `OTEL_*` environment variables; with no endpoint set the SDK stays off.
+- Log through `lib/log.ts`, not `console`: it writes to stdout (Docker collects it) and emits an OpenTelemetry log record in the same call.
+- Never hard-code or commit the ingestion key; it lives in OpenBao `prod/observability` (`HYPERDX_INGESTION_KEY`).
+
 ## UI conventions
 
 - Keep the URL date query (`?date=YYYY-MM-DD`) in sync with selected entries so browser Back/Forward works.
