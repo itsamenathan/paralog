@@ -30,6 +30,7 @@ import { ActivityWidget } from "./widgets/activity-widget";
 import { ArchiveWidget } from "./widgets/archive-widget";
 import { displayDate, fromIso, iso, monthKey } from "./widgets/date-utils";
 import { ImmichWidget, immichImageUrl } from "./widgets/immich-widget";
+import { OnThisDayWidget } from "./widgets/on-this-day-widget";
 import { ReferencesWidget } from "./widgets/references-widget";
 import type { Memory, WidgetPlacement } from "./widgets/types";
 import { WordCalendarWidget } from "./widgets/word-calendar-widget";
@@ -41,6 +42,7 @@ import { RevisionsDialog } from "./journal/revisions-dialog";
 import { SettingsDialog } from "./journal/settings-dialog";
 import { unsubscribeCurrentDevice } from "./journal/notification-preferences";
 import { useDayContext } from "./journal/use-day-context";
+import { useOnThisDayPhotos } from "./journal/use-on-this-day-photos";
 import { useJournalReferences } from "./journal/use-journal-references";
 import { useRandomMemory } from "./journal/use-random-memory";
 import { useTheme } from "./journal/use-theme";
@@ -228,7 +230,12 @@ export default function Journal() {
   const { tags, people, refreshReferences: loadReferences } = useJournalReferences();
   const { activities, photos, photoTotal } = useDayContext(selected);
   const randomMemory = useRandomMemory(selected);
+  const onThisDayVisible = Boolean(settings) && !(settings?.widgetLayout || DEFAULT_WIDGET_LAYOUT).hidden.includes("onThisDay");
+  const onThisDay = useOnThisDayPhotos(selected, onThisDayVisible);
+  const onThisDayPhotos = useMemo(() => onThisDay.years.flatMap((year) => year.photos), [onThisDay.years]);
   const [openPhoto, setOpenPhoto] = useState<DayPhoto | null>(null);
+  const [lightboxSource, setLightboxSource] = useState<"day" | "onThisDay">("day");
+  const lightboxPhotos = lightboxSource === "onThisDay" ? onThisDayPhotos : photos;
   const [loadedPhotoId, setLoadedPhotoId] = useState<string | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showRevisions, setShowRevisions] = useState(false);
@@ -290,11 +297,11 @@ export default function Journal() {
 
   const moveOpenPhoto = useCallback((offset: number) => {
     setOpenPhoto((current) => {
-      if (!current || photos.length < 2) return current;
-      const index = photos.findIndex((photo) => photo.id === current.id);
-      return photos[(Math.max(index, 0) + offset + photos.length) % photos.length];
+      if (!current || lightboxPhotos.length < 2) return current;
+      const index = lightboxPhotos.findIndex((photo) => photo.id === current.id);
+      return lightboxPhotos[(Math.max(index, 0) + offset + lightboxPhotos.length) % lightboxPhotos.length];
     });
-  }, [photos]);
+  }, [lightboxPhotos]);
 
   const applyRemoteEntry = useCallback((date: string, remote: Entry) => {
     if (date !== selectedRef.current || (serverContentRef.current !== null && storedMarkdown(remote.content) === storedMarkdown(serverContentRef.current))) return;
@@ -745,13 +752,13 @@ export default function Journal() {
 
   useEffect(() => {
     setLoadedPhotoId(null);
-    if (!openPhoto || photos.length < 2) return;
+    if (!openPhoto || lightboxPhotos.length < 2) return;
     const timer = window.setTimeout(() => {
-      const current = photos.findIndex((photo) => photo.id === openPhoto.id);
+      const current = lightboxPhotos.findIndex((photo) => photo.id === openPhoto.id);
       if (current < 0) return;
       const adjacent = new Set([
-        photos[(current - 1 + photos.length) % photos.length]?.id,
-        photos[(current + 1) % photos.length]?.id,
+        lightboxPhotos[(current - 1 + lightboxPhotos.length) % lightboxPhotos.length]?.id,
+        lightboxPhotos[(current + 1) % lightboxPhotos.length]?.id,
       ]);
       adjacent.delete(openPhoto.id);
       for (const id of adjacent) {
@@ -760,7 +767,7 @@ export default function Journal() {
       }
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [openPhoto, photos]);
+  }, [openPhoto, lightboxPhotos]);
 
   useEffect(() => { loadCalendar(month); }, [loadCalendar, month]);
 
@@ -1002,7 +1009,17 @@ export default function Journal() {
         selected={selected}
         placement={placement}
         settings={settings?.widgetSettings.immich || DEFAULT_WIDGET_SETTINGS.immich}
-        onOpen={setOpenPhoto}
+        onOpen={(photo) => { setLightboxSource("day"); setOpenPhoto(photo); }}
+      />;
+      if (provider === "onThisDay") return <OnThisDayWidget
+        key={provider}
+        years={onThisDay.years}
+        total={onThisDay.total}
+        selected={selected}
+        placement={placement}
+        settings={settings?.widgetSettings.onThisDay || DEFAULT_WIDGET_SETTINGS.onThisDay}
+        onOpen={(photo) => { setLightboxSource("onThisDay"); setOpenPhoto(photo); }}
+        onChoose={choose}
       />;
       if (provider === "archive") return <ArchiveWidget key={provider} memories={entry.memories} selected={selected} expanded={showAllMemories} placement={placement} onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />;
       if (provider === "random") return <RandomMemoryWidget key={provider} memory={randomMemory.memory} selected={selected} scope={randomMemory.scope} loading={randomMemory.loading} placement={placement} onScopeChange={randomMemory.setScope} onRefresh={randomMemory.refresh} onChoose={choose} />;
@@ -1216,7 +1233,7 @@ export default function Journal() {
 
       {openPhoto && <PhotoLightbox
         photo={openPhoto}
-        photos={photos}
+        photos={lightboxPhotos}
         selected={selected}
         loadedPhotoId={loadedPhotoId}
         onLoaded={setLoadedPhotoId}

@@ -9,10 +9,16 @@ import {
 } from "@/lib/widget-settings";
 
 export function ImmichSettingsDialog({
+  id = "immich",
+  eyebrow = "IMMICH WIDGET",
+  name = "Immich",
   settings,
   onChange,
   onClose,
 }: {
+  id?: string;
+  eyebrow?: string;
+  name?: string;
   settings: ImmichWidgetSettings;
   onChange: (settings: ImmichWidgetSettings) => void;
   onClose: () => void;
@@ -54,10 +60,10 @@ export function ImmichSettingsDialog({
       event.stopPropagation();
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section ref={panelRef} className="widget-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="immich-settings-title">
+      <section ref={panelRef} className="widget-settings-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-settings-title`}>
         <header>
-          <div><p className="eyebrow">IMMICH WIDGET</p><h3 id="immich-settings-title">Photo settings</h3></div>
-          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close Immich settings">×</button>
+          <div><p className="eyebrow">{eyebrow}</p><h3 id={`${id}-settings-title`}>Photo settings</h3></div>
+          <button ref={closeRef} type="button" onClick={onClose} aria-label={`Close ${name} settings`}>×</button>
         </header>
         <label className="toggle-setting">
           <input

@@ -7,7 +7,7 @@ import {
   normalizeWidgetLayout,
   resolveWidgetLayoutUpdate,
 } from "../lib/widget-layout.ts";
-import { selectImmichWidgetPhotos } from "../lib/immich-photo-selection.ts";
+import { selectImmichWidgetPhotos, selectOnThisDayPhotos } from "../lib/immich-photo-selection.ts";
 import {
   DEFAULT_WIDGET_SETTINGS,
   normalizeWidgetSettings,
@@ -24,7 +24,7 @@ test("converts legacy provider order and tag visibility", () => {
     showTagCloud: false,
   }), {
     navigation: ["calendar", "stats", "search", "tags", "people"],
-    context: ["github", "archive", "immich", "random"],
+    context: ["github", "archive", "immich", "onThisDay", "random"],
     hidden: ["tags", "people"],
   });
 });
@@ -36,7 +36,7 @@ test("removes unknown and duplicate ids, keeps zones separate, and appends missi
     hidden: ["calendar", "tags", "random", "tags", "unknown"],
   }), {
     navigation: ["calendar", "people", "stats", "search", "tags"],
-    context: ["archive", "immich", "github", "random"],
+    context: ["archive", "immich", "onThisDay", "github", "random"],
     hidden: ["tags", "random"],
   });
 });
@@ -48,7 +48,7 @@ test("keeps the calendar pinned first and visible", () => {
     hidden: ["calendar"],
   }), {
     navigation: ["calendar", "tags", "people", "stats", "search"],
-    context: ["immich", "archive", "github", "random"],
+    context: ["immich", "archive", "github", "random", "onThisDay"],
     hidden: [],
   });
 });
@@ -64,7 +64,7 @@ test("applies legacy updates to an existing canonical layout", () => {
     showTagCloud: true,
   }), {
     navigation: ["calendar", "people", "stats", "search", "tags"],
-    context: ["github", "immich", "archive", "random"],
+    context: ["github", "immich", "archive", "random", "onThisDay"],
     hidden: ["github"],
   });
 });
@@ -92,7 +92,7 @@ test("lets an older client update legacy fields when it echoes an unchanged cano
     showTagCloud: false,
   }), {
     navigation: ["calendar", "people", "search", "stats", "tags"],
-    context: ["archive", "random", "immich", "github"],
+    context: ["archive", "random", "immich", "github", "onThisDay"],
     hidden: ["immich", "tags", "people"],
   });
 });
@@ -109,7 +109,7 @@ test("prefers a changed canonical layout over stale mirrored legacy fields", () 
     showTagCloud: true,
   }), {
     navigation: ["calendar", "people", "search", "stats", "tags"],
-    context: ["github", "archive", "immich", "random"],
+    context: ["github", "archive", "immich", "random", "onThisDay"],
     hidden: ["people"],
   });
 });
@@ -124,6 +124,7 @@ test("normalizes valid widget settings and removes unknown values", () => {
     unknown: { enabled: true },
   }), {
     immich: { randomize: false, photoLimit: 12 },
+    onThisDay: DEFAULT_WIDGET_SETTINGS.onThisDay,
   });
 });
 
@@ -137,12 +138,13 @@ test("clamps integer photo limits and defaults malformed values", () => {
 });
 
 test("preserves current widget settings when an older client omits them", () => {
-  const current = { immich: { randomize: false, photoLimit: 18 } };
+  const current = { immich: { randomize: false, photoLimit: 18 }, onThisDay: { randomize: true, photoLimit: 4 } };
   assert.equal(resolveWidgetSettingsUpdate(current, undefined), current);
   assert.deepEqual(resolveWidgetSettingsUpdate(current, {
     immich: { randomize: true, photoLimit: 9 },
   }), {
     immich: { randomize: true, photoLimit: 9 },
+    onThisDay: DEFAULT_WIDGET_SETTINGS.onThisDay,
   });
 });
 
@@ -179,4 +181,28 @@ test("returns every Immich photo when the limit exceeds the available set", () =
     selectImmichWidgetPhotos(photos, "2026-07-24", { randomize: true, photoLimit: 12 }),
     photos,
   );
+});
+
+const pastYears = [
+  { date: "2025-07-24", total: 5, photos: Array.from({ length: 5 }, (_, index) => ({ ...photos[0], id: `2025-${index}` })) },
+  { date: "2023-07-24", total: 1, photos: [{ ...photos[0], id: "2023-0" }] },
+  { date: "2019-07-24", total: 2, photos: [{ ...photos[0], id: "2019-0" }, { ...photos[0], id: "2019-1" }] },
+];
+
+test("spreads on-this-day photos across years, newest first", () => {
+  assert.deepEqual(
+    selectOnThisDayPhotos(pastYears, "2026-07-24", { randomize: false, photoLimit: 5 }).map((photo) => photo.id),
+    ["2025-0", "2023-0", "2019-0", "2025-1", "2019-1"],
+  );
+});
+
+test("returns every on-this-day photo when the limit exceeds them", () => {
+  assert.equal(selectOnThisDayPhotos(pastYears, "2026-07-24", { randomize: true, photoLimit: 24 }).length, 8);
+});
+
+test("randomizes on-this-day photos within each year deterministically", () => {
+  const settings = { randomize: true, photoLimit: 3 };
+  const first = selectOnThisDayPhotos(pastYears, "2026-07-24", settings);
+  assert.deepEqual(first, selectOnThisDayPhotos(pastYears, "2026-07-24", settings));
+  assert.deepEqual(first.map((photo) => photo.id.slice(0, 4)), ["2025", "2023", "2019"]);
 });

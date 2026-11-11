@@ -186,5 +186,13 @@ export function WidgetLayoutEditor({ layout, widgetSettings, onLayoutChange, onW
       onChange={(immich) => onWidgetSettingsChange({ ...widgetSettings, immich })}
       onClose={closeSettings}
     />}
+    {configuring === "onThisDay" && <ImmichSettingsDialog
+      id="on-this-day"
+      eyebrow="ON THIS DAY WIDGET"
+      name="On this day"
+      settings={widgetSettings.onThisDay}
+      onChange={(onThisDay) => onWidgetSettingsChange({ ...widgetSettings, onThisDay })}
+      onClose={closeSettings}
+    />}
   </section>;
 }

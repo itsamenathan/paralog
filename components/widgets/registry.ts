@@ -19,9 +19,10 @@ export const NAVIGATION_WIDGETS: Record<NavigationWidgetId, WidgetDefinition> = 
 
 export const CONTEXT_WIDGETS: Record<ContextWidgetId, WidgetDefinition> = {
   immich: { id: "immich", label: "Immich", zone: "context", defaultOrder: 0, hideable: true, configurable: true },
-  archive: { id: "archive", label: "Your archive", zone: "context", defaultOrder: 1, hideable: true, configurable: false },
-  github: { id: "github", label: "GitHub", zone: "context", defaultOrder: 2, hideable: true, configurable: false },
-  random: { id: "random", label: "Random memory", zone: "context", defaultOrder: 3, hideable: true, configurable: false },
+  onThisDay: { id: "onThisDay", label: "Immich: on this day", zone: "context", defaultOrder: 1, hideable: true, configurable: true },
+  archive: { id: "archive", label: "Your archive", zone: "context", defaultOrder: 2, hideable: true, configurable: false },
+  github: { id: "github", label: "GitHub", zone: "context", defaultOrder: 3, hideable: true, configurable: false },
+  random: { id: "random", label: "Random memory", zone: "context", defaultOrder: 4, hideable: true, configurable: false },
 };
 
 export const WIDGETS: Record<WidgetId, WidgetDefinition> = { ...NAVIGATION_WIDGETS, ...CONTEXT_WIDGETS };

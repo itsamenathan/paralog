@@ -23,12 +23,14 @@ export function PhotoLightbox({
   onMove: (offset: number) => void;
 }) {
   const swipeStart = useRef<number | null>(null);
+  // Photos from other years carry their own date; the selected day is the fallback.
+  const takenOn = /^\d{4}-\d{2}-\d{2}/.test(photo.capturedAt || "") ? photo.capturedAt!.slice(0, 10) : selected;
   return <div className="photo-lightbox-backdrop" role="presentation" onClick={onClose}>
     <section
       className="photo-lightbox"
       role="dialog"
       aria-modal="true"
-      aria-label={`Large photo from ${displayDate(selected)}`}
+      aria-label={`Large photo from ${displayDate(takenOn)}`}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => {
         if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -47,7 +49,7 @@ export function PhotoLightbox({
       <img
         className={`photo-lightbox-image ${loadedPhotoId === photo.id ? "loaded" : ""}`}
         src={immichImageUrl(photo.id, "preview")}
-        alt={`Photo from ${displayDate(selected)}`}
+        alt={`Photo from ${displayDate(takenOn)}`}
         decoding="async"
         draggable={false}
         onLoad={() => onLoaded(photo.id)}

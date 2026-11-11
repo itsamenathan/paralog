@@ -141,7 +141,7 @@ Entries are written as `YYYY/MM-MMMM/YYYY-MM-DD-dddd.md`, for example `2026/07-J
 
 ## Immich photo previews
 
-Paralog can show previews of photos taken on the journal date. Create a read-only Immich API key with the `asset.read` and `asset.view` permissions, then configure:
+Paralog can show previews of photos taken on the journal date. Create a read-only Immich API key with the `asset.read`, `asset.view`, and `timeline.read` permissions, then configure:
 
 ```bash
 IMMICH_API_URL=https://photos.example.com
@@ -149,6 +149,8 @@ IMMICH_API_KEY=your-api-key
 ```
 
 The URL may include `/api`; Paralog adds it when omitted. Searches and thumbnail requests run only on the server, and the API key is never sent to the browser. Leave either variable unset to disable the integration.
+
+The **Immich: on this day** widget shows photos taken on the same month and day in earlier years, a few from each year, with links to those days in the journal. It reads Immich's monthly timeline counts to find which years have photos, which is why the key needs `timeline.read`. Results for a date are cached on the server for 10 minutes. Configure or hide the widget in Settings → Widgets.
 
 ## Daily activity integrations
 
