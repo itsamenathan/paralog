@@ -321,7 +321,19 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 .stats-panel b { color: var(--ink); font-size: 15px; letter-spacing: 0; }
 .entry-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 330px); align-items: start; gap: 24px; }
 .entry-editor-column { min-width: 0; }
-.entry-context-column { min-width: 0; display: grid; gap: 12px; padding-top: 14px; }
+.entry-context-column { min-width: 0; display: grid; align-content: start; gap: 12px; padding-top: 14px; }
+.context-group { min-width: 0; padding: 0 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+.context-group:not(:has(.widget)) { display: none; }
+.context-group-mobile { display: none; }
+.context-group-heading { margin: 0; }
+.context-group-heading button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 0; border: 0; background: transparent; color: var(--ink); font-size: 15px; font-weight: 750; letter-spacing: -.01em; text-align: left; }
+.context-group-chevron { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; color: var(--muted); font: 600 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.context-group-heading button:hover .context-group-chevron { background: var(--accent-soft); color: var(--accent); }
+.context-group-body { padding-bottom: 15px; border-top: 1px solid var(--line); }
+.context-group .context-group-body > .widget { margin: 0; padding: 14px 0 0; border: 0; border-radius: 0; background: transparent; }
+.context-group .context-group-body > .widget + .widget { margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--line); }
+.context-group .photo-heading h3, .context-group .activity-heading h3, .context-group .memory-heading h3 { font-size: 17px; }
+.context-group .photo-heading, .context-group .activity-heading { margin-bottom: 11px; }
 .entry-context-column .activity-shelf, .entry-context-column .photo-shelf, .entry-context-column .memory-shelf { margin-top: 0; }
 .entry-context-column .activity-shelf, .entry-context-column .photo-shelf, .entry-context-column .memory-shelf { padding: 15px; }
 .entry-context-column .photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -612,7 +624,7 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 .focus-mode .sidebar, .focus-mode .mobile-bar, .focus-mode .entry-header, .focus-mode .activity-shelf, .focus-mode .photo-shelf, .focus-mode .memory-shelf { display: none !important; }
 .focus-mode .journal-page { width: min(100%, 900px); padding-top: 34px; }
 .focus-mode .entry-workspace { display: block; }
-.focus-mode .entry-context-column { display: none; }
+.focus-mode .entry-context-column, .focus-mode .context-group { display: none; }
 .focus-mode .editor-command-bar { margin-top: 0; }
 
 .calendar-sheet { width: min(410px, 100%); max-height: calc(100dvh - 40px); padding: 22px; overflow-y: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-raised); box-shadow: var(--shadow); }
@@ -726,7 +738,7 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 
 @media (max-width: 1100px) {
   .entry-workspace { display: block; }
-  .entry-context-column { gap: 0; padding-top: 0; }
+  .entry-context-column { gap: 12px; padding-top: 24px; }
   .entry-context-column .activity-shelf, .entry-context-column .photo-shelf, .entry-context-column .memory-shelf { margin-top: 24px; padding: 18px; }
   .entry-context-column .activity-shelf + .photo-shelf, .entry-context-column .activity-shelf + .memory-shelf { margin-top: 12px; }
   .entry-context-column .photo-shelf + .memory-shelf, .entry-context-column .photo-shelf + .photo-shelf { margin-top: 12px; }
@@ -770,6 +782,11 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
   .header-actions { gap: 8px; }
   .save-control { min-height: 37px; padding-inline: 11px; font-size: 10px; }
   .location-feedback { top: calc(68px + env(safe-area-inset-top)); right: 12px; left: 12px; width: auto; max-width: none; }
+  .context-group-desktop { display: none; }
+  .entry-context-column { padding-top: 0; }
+  .context-group-mobile { display: block; margin-top: 12px; }
+  .context-group-mobile:not(:has(.widget)) { display: none; }
+  .context-group { padding-inline: 14px; }
   .photo-shelf { margin-top: 18px; padding: 16px; }
   .photo-shelf-desktop { display: none; }
   .photo-shelf-mobile { display: block; margin-top: 6px; }

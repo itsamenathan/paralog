@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CONTEXT_GROUPS,
   DEFAULT_WIDGET_LAYOUT,
   applyLegacyWidgetSettings,
+  contextGroupMembers,
   legacyWidgetSettings,
   normalizeWidgetLayout,
+  reorderContextGroup,
   resolveWidgetLayoutUpdate,
 } from "../lib/widget-layout.ts";
 import { selectImmichWidgetPhotos, selectOnThisDayPhotos } from "../lib/immich-photo-selection.ts";
@@ -205,4 +208,20 @@ test("randomizes on-this-day photos within each year deterministically", () => {
   const first = selectOnThisDayPhotos(pastYears, "2026-07-24", settings);
   assert.deepEqual(first, selectOnThisDayPhotos(pastYears, "2026-07-24", settings));
   assert.deepEqual(first.map((photo) => photo.id.slice(0, 4)), ["2025", "2023", "2019"]);
+});
+
+test("assigns every context widget to exactly one group", () => {
+  const grouped = Object.values(CONTEXT_GROUPS).flat();
+  assert.deepEqual([...grouped].sort(), [...DEFAULT_WIDGET_LAYOUT.context].sort());
+  assert.equal(new Set(grouped).size, grouped.length);
+});
+
+test("reads and reorders one context group without moving the other", () => {
+  const context = ["github", "archive", "immich", "random", "onThisDay"];
+  assert.deepEqual(contextGroupMembers(context, "day"), ["github", "immich"]);
+  assert.deepEqual(contextGroupMembers(context, "past"), ["archive", "random", "onThisDay"]);
+  assert.deepEqual(
+    reorderContextGroup(context, ["onThisDay", "archive", "random"]),
+    ["github", "onThisDay", "immich", "archive", "random"],
+  );
 });
