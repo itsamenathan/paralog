@@ -1019,7 +1019,6 @@ export default function Journal() {
         placement={placement}
         settings={settings?.widgetSettings.onThisDay || DEFAULT_WIDGET_SETTINGS.onThisDay}
         onOpen={(photo) => { setLightboxSource("onThisDay"); setOpenPhoto(photo); }}
-        onChoose={choose}
       />;
       if (provider === "archive") return <ArchiveWidget key={provider} memories={entry.memories} selected={selected} expanded={showAllMemories} placement={placement} onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />;
       if (provider === "random") return <RandomMemoryWidget key={provider} memory={randomMemory.memory} selected={selected} scope={randomMemory.scope} loading={randomMemory.loading} placement={placement} onScopeChange={randomMemory.setScope} onRefresh={randomMemory.refresh} onChoose={choose} />;

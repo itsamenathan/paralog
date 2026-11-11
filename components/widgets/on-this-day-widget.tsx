@@ -4,25 +4,19 @@ import { useMemo } from "react";
 import type { DayPhoto, PastDayPhotos } from "@/lib/day-activity-types";
 import { selectOnThisDayPhotos } from "@/lib/immich-photo-selection";
 import type { ImmichWidgetSettings } from "@/lib/widget-settings";
-import { displayDate, fromIso } from "./date-utils";
+import { displayDate } from "./date-utils";
 import { immichImageUrl } from "./immich-widget";
 import type { WidgetPlacement } from "./types";
 
 const photoDate = (photo: DayPhoto, fallback: string) => photo.capturedAt?.slice(0, 10) || fallback;
 
-function yearsAgo(selected: string, date: string) {
-  const years = fromIso(selected).getFullYear() - fromIso(date).getFullYear();
-  return years === 1 ? "1 year ago" : `${years} years ago`;
-}
-
-export function OnThisDayWidget({ years, total, selected, placement, settings, onOpen, onChoose }: {
+export function OnThisDayWidget({ years, total, selected, placement, settings, onOpen }: {
   years: PastDayPhotos[];
   total: number;
   selected: string;
   placement: WidgetPlacement;
   settings: ImmichWidgetSettings;
   onOpen: (photo: DayPhoto) => void;
-  onChoose: (date: string) => void;
 }) {
   const visiblePhotos = useMemo(
     () => selectOnThisDayPhotos(years, selected, settings),
@@ -42,12 +36,5 @@ export function OnThisDayWidget({ years, total, selected, placement, settings, o
         </button>;
       })}
     </div>
-    <div className="photo-years" aria-label="Go to that day">
-      {years.map((year) => <button type="button" key={year.date} onClick={() => onChoose(year.date)} title={displayDate(year.date)}>
-        <b>{year.date.slice(0, 4)}</b> {yearsAgo(selected, year.date)} · {year.total}
-      </button>)}
-    </div>
   </section>;
 }
-
-export { photoDate };
