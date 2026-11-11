@@ -2,8 +2,11 @@
 
 import { useRef } from "react";
 import type { DayPhoto } from "@/lib/day-activity-types";
-import { displayDate } from "@/components/widgets/date-utils";
+import { displayDate, fromIso } from "@/components/widgets/date-utils";
 import { immichImageUrl } from "@/components/widgets/immich-widget";
+
+const shortDate = (value: string) =>
+  new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(fromIso(value));
 
 export function PhotoLightbox({
   photo,
@@ -54,9 +57,12 @@ export function PhotoLightbox({
         draggable={false}
         onLoad={() => onLoaded(photo.id)}
       />
+      <span className="photo-lightbox-position" aria-live="polite">
+        <time dateTime={takenOn}>{shortDate(takenOn)}</time>
+        {photos.length > 1 && <> · {photos.findIndex((item) => item.id === photo.id) + 1} / {photos.length}</>}
+      </span>
       {photos.length > 1 && <>
         <button type="button" className="photo-lightbox-nav previous" onClick={() => onMove(-1)} aria-label="Previous photo">←</button>
-        <span className="photo-lightbox-position" aria-live="polite">{photos.findIndex((item) => item.id === photo.id) + 1} / {photos.length}</span>
         <button type="button" className="photo-lightbox-nav next" onClick={() => onMove(1)} aria-label="Next photo">→</button>
       </>}
     </section>
