@@ -4,18 +4,17 @@ import type { ReactNode } from "react";
 import { displayDate, fromIso } from "./date-utils";
 import type { Memory, WidgetPlacement } from "./types";
 
-export function MemoryWidgetShell({ placement, widgetClass, titleId, eyebrow, title, action, children }: {
+export function MemoryWidgetShell({ placement, widgetClass, titleId, eyebrow, action, children }: {
   placement: WidgetPlacement;
   widgetClass: string;
   titleId: string;
   eyebrow: string;
-  title: string;
   action: ReactNode;
   children: ReactNode;
 }) {
   return <section className={`memory-shelf memory-shelf-${placement} widget ${widgetClass}`} aria-labelledby={titleId}>
     <div className="memory-heading">
-      <div><p className="eyebrow">{eyebrow}</p><h3 id={titleId}>{title}</h3></div>
+      <h3 className="eyebrow" id={titleId}>{eyebrow}</h3>
       <div className="memory-heading-action">{action}</div>
     </div>
     {children}

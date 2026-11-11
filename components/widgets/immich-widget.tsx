@@ -26,7 +26,7 @@ export function ImmichWidget({ photos, total, selected, placement, settings, onO
   const titleId = `photo-title-${placement}`;
   const count = total === 1 ? "1 photo" : total > visiblePhotos.length ? `${visiblePhotos.length} of ${total} photos` : `${total} photos`;
   return <section className={`photo-shelf photo-shelf-${placement} widget widget-immich`} aria-labelledby={titleId}>
-    <div className="photo-heading"><div><p className="eyebrow">FROM IMMICH</p><h3 id={titleId}>Photos from this day</h3></div><span>{count}</span></div>
+    <div className="photo-heading"><h3 className="eyebrow" id={titleId}>FROM IMMICH</h3><span>{count}</span></div>
     <div className="photo-grid">
       {visiblePhotos.map((photo, index) => <button type="button" className="photo-card" key={photo.id} onClick={() => onOpen(photo)} aria-label={`Open photo ${index + 1} from ${displayDate(selected)} larger`}>
         <img src={immichImageUrl(photo.id, "thumbnail")} alt="" width={photo.width || 640} height={photo.height || 480} loading="lazy" decoding="async" />
