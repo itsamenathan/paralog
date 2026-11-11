@@ -26,7 +26,7 @@ export function OnThisDayWidget({ years, total, selected, placement, settings, o
   const titleId = `on-this-day-title-${placement}`;
   const count = total === 1 ? "1 photo" : total > visiblePhotos.length ? `${visiblePhotos.length} of ${total} photos` : `${total} photos`;
   return <section className={`photo-shelf photo-shelf-${placement} widget widget-on-this-day`} aria-labelledby={titleId}>
-    <div className="photo-heading"><div><p className="eyebrow">FROM IMMICH</p><h3 id={titleId}>On this day</h3></div><span>{count}</span></div>
+    <div className="photo-heading"><h3 className="eyebrow" id={titleId}>FROM IMMICH</h3><span>{count}</span></div>
     <div className="photo-grid">
       {visiblePhotos.map((photo) => {
         const date = photoDate(photo, selected);
