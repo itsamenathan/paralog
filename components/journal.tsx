@@ -23,7 +23,7 @@ import { remarkJournalReferences } from "@/lib/markdown-references";
 import { journalWordCount, markdownBody, setLocationFrontMatter } from "@/lib/front-matter";
 import { entryMap, mergeCalendarEntries, type CalendarEntry } from "@/lib/calendar-entries";
 import type { DayPhoto, DaySummaryActivity } from "@/lib/day-activity-types";
-import { DEFAULT_WIDGET_LAYOUT } from "@/lib/widget-layout";
+import { CONTEXT_GROUP_IDS, DEFAULT_WIDGET_LAYOUT, contextGroupMembers, type ContextWidgetId, type WidgetLayout } from "@/lib/widget-layout";
 import { DEFAULT_WIDGET_SETTINGS } from "@/lib/widget-settings";
 import { frontMatterPropertyNames } from "@/lib/property-icons";
 import { ActivityWidget } from "./widgets/activity-widget";
@@ -31,6 +31,7 @@ import { ArchiveWidget } from "./widgets/archive-widget";
 import { displayDate, fromIso, iso, monthKey } from "./widgets/date-utils";
 import { ImmichWidget, immichImageUrl } from "./widgets/immich-widget";
 import { OnThisDayWidget } from "./widgets/on-this-day-widget";
+import { ContextGroup, useCollapsedContextGroups } from "./widgets/context-group";
 import { ReferencesWidget } from "./widgets/references-widget";
 import type { Memory, WidgetPlacement } from "./widgets/types";
 import { WordCalendarWidget } from "./widgets/word-calendar-widget";
@@ -230,6 +231,7 @@ export default function Journal() {
   const { tags, people, refreshReferences: loadReferences } = useJournalReferences();
   const { activities, photos, photoTotal } = useDayContext(selected);
   const randomMemory = useRandomMemory(selected);
+  const contextGroups = useCollapsedContextGroups();
   const onThisDayVisible = Boolean(settings) && !(settings?.widgetLayout || DEFAULT_WIDGET_LAYOUT).hidden.includes("onThisDay");
   const onThisDay = useOnThisDayPhotos(selected, onThisDayVisible);
   const onThisDayPhotos = useMemo(() => onThisDay.years.flatMap((year) => year.photos), [onThisDay.years]);
@@ -1000,31 +1002,41 @@ export default function Journal() {
 
   function dailyContext(placement: WidgetPlacement) {
     const layout = settings?.widgetLayout || DEFAULT_WIDGET_LAYOUT;
-    return layout.context.map((provider) => {
-      if (layout.hidden.includes(provider)) return null;
-      if (provider === "immich") return <ImmichWidget
-        key={provider}
-        photos={photos}
-        total={photoTotal}
-        selected={selected}
-        placement={placement}
-        settings={settings?.widgetSettings.immich || DEFAULT_WIDGET_SETTINGS.immich}
-        onOpen={(photo) => { setLightboxSource("day"); setOpenPhoto(photo); }}
-      />;
-      if (provider === "onThisDay") return <OnThisDayWidget
-        key={provider}
-        years={onThisDay.years}
-        total={onThisDay.total}
-        selected={selected}
-        placement={placement}
-        settings={settings?.widgetSettings.onThisDay || DEFAULT_WIDGET_SETTINGS.onThisDay}
-        onOpen={(photo) => { setLightboxSource("onThisDay"); setOpenPhoto(photo); }}
-      />;
-      if (provider === "archive") return <ArchiveWidget key={provider} memories={entry.memories} selected={selected} expanded={showAllMemories} placement={placement} onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />;
-      if (provider === "random") return <RandomMemoryWidget key={provider} memory={randomMemory.memory} selected={selected} scope={randomMemory.scope} loading={randomMemory.loading} placement={placement} onScopeChange={randomMemory.setScope} onRefresh={randomMemory.refresh} onChoose={choose} />;
-      const activity = activities.find((item): item is DaySummaryActivity => item.kind === "summary" && item.provider === provider);
-      return activity ? <ActivityWidget key={provider} activity={activity} placement={placement} /> : null;
-    });
+    return CONTEXT_GROUP_IDS.map((group) => <ContextGroup
+      key={group}
+      group={group}
+      placement={placement}
+      collapsed={contextGroups.collapsed.includes(group)}
+      onToggle={() => contextGroups.toggle(group)}
+    >
+      {contextGroupMembers(layout.context, group).map((provider) => contextWidget(provider, layout, placement))}
+    </ContextGroup>);
+  }
+
+  function contextWidget(provider: ContextWidgetId, layout: WidgetLayout, placement: WidgetPlacement) {
+    if (layout.hidden.includes(provider)) return null;
+    if (provider === "immich") return <ImmichWidget
+      key={provider}
+      photos={photos}
+      total={photoTotal}
+      selected={selected}
+      placement={placement}
+      settings={settings?.widgetSettings.immich || DEFAULT_WIDGET_SETTINGS.immich}
+      onOpen={(photo) => { setLightboxSource("day"); setOpenPhoto(photo); }}
+    />;
+    if (provider === "onThisDay") return <OnThisDayWidget
+      key={provider}
+      years={onThisDay.years}
+      total={onThisDay.total}
+      selected={selected}
+      placement={placement}
+      settings={settings?.widgetSettings.onThisDay || DEFAULT_WIDGET_SETTINGS.onThisDay}
+      onOpen={(photo) => { setLightboxSource("onThisDay"); setOpenPhoto(photo); }}
+    />;
+    if (provider === "archive") return <ArchiveWidget key={provider} memories={entry.memories} selected={selected} expanded={showAllMemories} placement={placement} onToggle={() => setShowAllMemories((current) => !current)} onChoose={choose} />;
+    if (provider === "random") return <RandomMemoryWidget key={provider} memory={randomMemory.memory} selected={selected} scope={randomMemory.scope} loading={randomMemory.loading} placement={placement} onScopeChange={randomMemory.setScope} onRefresh={randomMemory.refresh} onChoose={choose} />;
+    const activity = activities.find((item): item is DaySummaryActivity => item.kind === "summary" && item.provider === provider);
+    return activity ? <ActivityWidget key={provider} activity={activity} placement={placement} /> : null;
   }
 
   async function signOut() {

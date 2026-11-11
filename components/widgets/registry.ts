@@ -1,4 +1,4 @@
-import type { ContextWidgetId, NavigationWidgetId, WidgetId } from "@/lib/widget-layout";
+import type { ContextGroupId, ContextWidgetId, NavigationWidgetId, WidgetId } from "@/lib/widget-layout";
 
 export type WidgetDefinition = {
   id: WidgetId;
@@ -26,3 +26,8 @@ export const CONTEXT_WIDGETS: Record<ContextWidgetId, WidgetDefinition> = {
 };
 
 export const WIDGETS: Record<WidgetId, WidgetDefinition> = { ...NAVIGATION_WIDGETS, ...CONTEXT_WIDGETS };
+
+export const CONTEXT_GROUP_LABELS: Record<ContextGroupId, { title: string; help: string }> = {
+  day: { title: "This day", help: "What happened on the selected date. Shown first beside the editor." },
+  past: { title: "Looking back", help: "Memories from earlier years and the rest of your journal." },
+};

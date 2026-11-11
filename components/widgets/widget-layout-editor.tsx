@@ -1,12 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { WidgetId, WidgetLayout } from "@/lib/widget-layout";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+  CONTEXT_GROUP_IDS,
+  contextGroupMembers,
+  reorderContextGroup,
+  type ContextGroupId,
+  type ContextWidgetId,
+  type NavigationWidgetId,
+  type WidgetId,
+  type WidgetLayout,
+} from "@/lib/widget-layout";
 import type { WidgetSettings } from "@/lib/widget-settings";
-import { WIDGETS } from "./registry";
+import { CONTEXT_GROUP_LABELS, WIDGETS } from "./registry";
 import { ImmichSettingsDialog } from "./widget-settings-dialog";
 
-type WidgetZone = "navigation" | "context";
+// A list the user can reorder: the navigation column, or one daily-context group.
+type WidgetZone = "navigation" | ContextGroupId;
 
 export function WidgetLayoutEditor({ layout, widgetSettings, onLayoutChange, onWidgetSettingsChange }: {
   layout: WidgetLayout;
@@ -32,15 +42,14 @@ export function WidgetLayoutEditor({ layout, widgetSettings, onLayoutChange, onW
     };
   }, [configuring]);
 
-  function ordered(zone: WidgetZone) {
-    return layout[zone] as WidgetId[];
+  function ordered(zone: WidgetZone): WidgetId[] {
+    return zone === "navigation" ? layout.navigation : contextGroupMembers(layout.context, zone);
   }
 
   function updateOrder(zone: WidgetZone, ids: WidgetId[]) {
-    onLayoutChange({
-      ...layout,
-      [zone]: ids,
-    } as WidgetLayout);
+    onLayoutChange(zone === "navigation"
+      ? { ...layout, navigation: ids as NavigationWidgetId[] }
+      : { ...layout, context: reorderContextGroup(layout.context, ids as ContextWidgetId[]) });
   }
 
   function move(zone: WidgetZone, id: WidgetId, offset: -1 | 1) {
@@ -179,7 +188,7 @@ export function WidgetLayoutEditor({ layout, widgetSettings, onLayoutChange, onW
   return <section className="widget-layout-setting" aria-labelledby="widget-layout-title">
     <div><p className="eyebrow">WIDGETS</p><h3 id="widget-layout-title">Layout and visibility</h3></div>
     {group("navigation", "Navigation", "Shown in the desktop sidebar and mobile date browser. The month stays first.")}
-    {group("context", "Daily context", "Shown beside the editor on desktop and below it on mobile.")}
+    {CONTEXT_GROUP_IDS.map((id) => <Fragment key={id}>{group(id, CONTEXT_GROUP_LABELS[id].title, CONTEXT_GROUP_LABELS[id].help)}</Fragment>)}
     <p className="widget-order-status" aria-live="polite">{active ? `${active} picked up. Drag it, or use the arrow keys, then press Enter to drop.` : ""}</p>
     {configuring === "immich" && <ImmichSettingsDialog
       settings={widgetSettings.immich}

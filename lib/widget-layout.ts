@@ -98,3 +98,27 @@ export function legacyWidgetSettings(layout: WidgetLayout) {
     showTagCloud: !layout.hidden.includes("tags") || !layout.hidden.includes("people"),
   };
 }
+
+// Daily context widgets sit in two fixed groups: what happened on the selected
+// day, and what came before it. The stored `context` order stays one list, so
+// each group shows its members in the order they hold there.
+export const CONTEXT_GROUPS = {
+  day: ["immich", "github"],
+  past: ["onThisDay", "archive", "random"],
+} as const satisfies Record<string, readonly ContextWidgetId[]>;
+
+export type ContextGroupId = keyof typeof CONTEXT_GROUPS;
+export const CONTEXT_GROUP_IDS = Object.keys(CONTEXT_GROUPS) as ContextGroupId[];
+
+export function contextGroupMembers(context: readonly ContextWidgetId[], group: ContextGroupId) {
+  const members = new Set<ContextWidgetId>(CONTEXT_GROUPS[group]);
+  return context.filter((id) => members.has(id));
+}
+
+// Put `ordered` (one group's members, in their new order) back into the slots
+// that group holds in `context`, leaving the other group's widgets in place.
+export function reorderContextGroup(context: readonly ContextWidgetId[], ordered: readonly ContextWidgetId[]) {
+  const members = new Set(ordered);
+  let next = 0;
+  return context.map((id) => members.has(id) ? ordered[next++] : id);
+}
