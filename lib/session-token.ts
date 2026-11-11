@@ -6,16 +6,17 @@ const CLOCK_SKEW_SECONDS = 5 * 60;
 
 export type SessionKeys = {
   secret: string;
-  // Binds sessions to the configured password, so changing it signs every device out.
-  password: string;
+  // Binds sessions to the configured password and OIDC allow list, so changing
+  // either signs every device out.
+  credentials: string;
   // Bumped on sign out, which revokes every session issued before it.
   generation: number;
 };
 
 function signature(keys: SessionKeys, issuedAt: number) {
-  const password = crypto.createHash("sha256").update(keys.password).digest("base64url");
+  const credentials = crypto.createHash("sha256").update(keys.credentials).digest("base64url");
   return crypto.createHmac("sha256", keys.secret)
-    .update(`paralog-session.v1.${issuedAt}.${keys.generation}.${password}`)
+    .update(`paralog-session.v1.${issuedAt}.${keys.generation}.${credentials}`)
     .digest("base64url");
 }
 

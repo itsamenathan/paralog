@@ -32,6 +32,7 @@
     "drizzle-orm": "^0.45.2",
     "lucide": "^1.27.0",
     "next": "16.2.10",
+    "oauth4webapi": "3.8.8",
     "pino": "10.4.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",

@@ -9,6 +9,8 @@ import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { after, before, test } from "node:test";
+import Database from "better-sqlite3";
+import { startFakeOidcProvider } from "./fake-oidc-provider.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
@@ -17,6 +19,8 @@ const password = "paralog-production-test";
 let server;
 let base;
 let cookie = "";
+let provider;
+const oidcClient = { clientId: "paralog", clientSecret: "paralog-client-secret" };
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -78,12 +82,23 @@ before(async () => {
   assert.equal(build.status, 0, "next build failed");
 
   seed();
+  provider = await startFakeOidcProvider(oidcClient);
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [next, "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: root,
-    stdio: ["ignore", "ignore", "inherit"],
-    env: { ...env, PARALOG_DATA_DIR: dataDir, PARALOG_PASSWORD: password, PARALOG_AUTH_SECRET: "paralog-production-test-secret" },
+    stdio: ["ignore", process.env.PARALOG_TEST_SERVER_LOG ? "inherit" : "ignore", "inherit"],
+    env: {
+      ...env,
+      PARALOG_DATA_DIR: dataDir,
+      PARALOG_PASSWORD: password,
+      PARALOG_AUTH_SECRET: "paralog-production-test-secret",
+      PARALOG_PUBLIC_URL: base,
+      PARALOG_OIDC_ISSUER: provider.issuer,
+      PARALOG_OIDC_CLIENT_ID: oidcClient.clientId,
+      PARALOG_OIDC_CLIENT_SECRET: oidcClient.clientSecret,
+      PARALOG_OIDC_SUBJECT: "owner-id",
+    },
   });
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
@@ -96,6 +111,7 @@ before(async () => {
 
 after(() => {
   server?.kill();
+  provider?.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -139,4 +155,87 @@ test("a day saved in two places opens the newest copy, and edits stay in the fil
   assert.equal(saved.saved, true);
   assert.equal(fs.readFileSync(path.join(dataDir, "notes/2019-07-04.md"), "utf8"), "Edited in the app.\n");
   assert.equal(fs.existsSync(path.join(dataDir, "2019/07-July/2019-07-04-Thursday.md")), false);
+});
+
+// Follows the Pocket ID round trip the way a browser would, and answers where it
+// landed and the session cookie it was given, if any.
+async function signInWithPocketId(returnTo = "/?date=2016-10-22") {
+  const start = await fetch(`${base}/api/auth/oidc/login?returnTo=${encodeURIComponent(returnTo)}`, { redirect: "manual" });
+  assert.equal(start.status, 303);
+  const pending = start.headers.getSetCookie().find((value) => value.startsWith("paralog_oidc="))?.split(";")[0];
+  assert.ok(pending, "no sign-in state cookie");
+  const authorize = await fetch(start.headers.get("location"), { redirect: "manual" });
+  const callback = new URL(authorize.headers.get("location"));
+  assert.equal(callback.origin + callback.pathname, `${base}/api/auth/oidc/callback`);
+  const done = await fetch(callback, { redirect: "manual", headers: { Cookie: pending } });
+  assert.equal(done.status, 303);
+  const session = done.headers.getSetCookie().find((value) => value.startsWith("paralog_session=") && !value.startsWith("paralog_session=;"))?.split(";")[0];
+  return { location: done.headers.get("location"), session };
+}
+
+const calendarStatus = async (session) => (await fetch(`${base}/api/calendar?month=2016-10`, { headers: { Cookie: session } })).status;
+
+function setGrantCheckDue() {
+  const database = new Database(path.join(dataDir, "journal.db"));
+  try {
+    const row = database.prepare("SELECT value FROM settings WHERE key = 'oidcGrant'").get();
+    assert.ok(row, "no refresh token stored after signing in");
+    const grant = JSON.parse(row.value);
+    database.prepare("UPDATE settings SET value = ? WHERE key = 'oidcGrant'").run(JSON.stringify({ ...grant, checkAt: 0 }));
+    return grant.refreshToken;
+  } finally {
+    database.close();
+  }
+}
+
+test("the owner signs in with Pocket ID and returns to the day they were on", async () => {
+  const page = await (await fetch(base)).text();
+  assert.match(page, /Sign in with <!-- -->Pocket ID|Sign in with Pocket ID/);
+  const { location, session } = await signInWithPocketId();
+  assert.equal(location, "/?date=2016-10-22");
+  assert.ok(session, "no session cookie");
+  assert.equal(await calendarStatus(session), 200);
+});
+
+test("Pocket ID sign-in refuses anyone but the owner, forged state, and forged ID tokens", async () => {
+  provider.state.subject = "someone-else";
+  try {
+    const { location, session } = await signInWithPocketId();
+    assert.equal(location, "/?oidc_error=not_owner");
+    assert.equal(session, undefined);
+  } finally {
+    provider.state.subject = "owner-id";
+  }
+
+  provider.state.badSignature = true;
+  try {
+    const { location, session } = await signInWithPocketId();
+    assert.equal(location, "/?oidc_error=failed");
+    assert.equal(session, undefined);
+  } finally {
+    provider.state.badSignature = false;
+  }
+
+  const noState = await fetch(`${base}/api/auth/oidc/callback?code=x&state=y`, { redirect: "manual" });
+  assert.equal(noState.headers.get("location"), "/?oidc_error=expired");
+
+  const offSite = await signInWithPocketId("//evil.example/");
+  assert.equal(offSite.location, "/");
+});
+
+// Runs last: revoking access signs out every device, including the shared password session.
+test("losing access in Pocket ID signs every device out at the next daily check", async () => {
+  const { session } = await signInWithPocketId();
+  assert.equal(await calendarStatus(session), 200);
+
+  const before = setGrantCheckDue();
+  const refreshes = provider.state.refreshes;
+  assert.equal(await calendarStatus(session), 200);
+  assert.equal(provider.state.refreshes, refreshes + 1, "the grant was not checked");
+  assert.notEqual(setGrantCheckDue(), before, "the rotated refresh token was not kept");
+
+  provider.state.revoked = true;
+  assert.equal(await calendarStatus(session), 401);
+  assert.equal(await calendarStatus(cookie), 401, "a password session survived");
+  provider.state.revoked = false;
 });
