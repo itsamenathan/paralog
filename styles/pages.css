@@ -3,6 +3,11 @@
 .login-page h1 { margin: 0; font: 600 43px/1 "Iowan Old Style", Georgia, serif; letter-spacing: -.04em; }
 .setup-message, .error { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .error { color: var(--accent); }
+.login-oidc { text-decoration: none; }
+.save-button.login-secondary, :root[data-theme="dark"] .save-button.login-secondary { border-color: var(--line-strong); background: transparent; color: var(--ink); }
+.save-button.login-secondary:hover:not(:disabled) { background: var(--paper); }
+.login-divider { display: flex; align-items: center; gap: 11px; margin: 0; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.login-divider::before, .login-divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
 .setup-message code { padding: 2px 4px; border-radius: 4px; background: var(--paper); }
 
 .tag-page { width: min(900px, 100%); min-height: 100dvh; margin: 0 auto; padding: 56px clamp(22px, 6vw, 72px) 80px; }

@@ -26,9 +26,82 @@ Open [http://localhost:3000](http://localhost:3000). Journal data defaults to `.
 docker compose up --build -d
 ```
 
-The `./data` directory is mounted into the container at `/data`, holding both `journal.db`, uploads, settings, and Markdown entries. Back up this directory to back up Paralog. Set `PARALOG_PASSWORD` and a long random `PARALOG_AUTH_SECRET` in a `.env` file before launching Docker. Compose refuses to start without both; generate the secret with `openssl rand -base64 32`. The secret signs session cookies, so anyone who knows it can sign in without the password: keep it private and never reuse an example value.
+The `./data` directory is mounted into the container at `/data`, holding both `journal.db`, uploads, settings, and Markdown entries. Back up this directory to back up Paralog. Set a long random `PARALOG_AUTH_SECRET` in a `.env` file before launching Docker, along with `PARALOG_PASSWORD`, the Pocket ID settings below, or both. Compose refuses to start without the secret; generate the secret with `openssl rand -base64 32`. The secret signs session cookies, so anyone who knows it can sign in without the password: keep it private and never reuse an example value.
 
-Sessions last 30 days. Signing out ends the session on every device, and changing `PARALOG_PASSWORD` or `PARALOG_AUTH_SECRET` signs every device out. After 10 wrong passwords in 15 minutes, sign-in is refused, even with the right password, until the oldest attempt is 15 minutes old. Behind a reverse proxy the limit applies per client address, taken from the last `X-Forwarded-For` entry; exposed directly, all attempts share one limit.
+### Sign in with Pocket ID
+
+Paralog can sign in through [Pocket ID](https://pocket-id.org) instead of, or alongside, the password. Paralog still has one owner and no accounts: Pocket ID is another way to prove you are that owner, and exactly one Pocket ID user is let in.
+
+**Requirements**
+
+- Pocket ID 2.6.0 or later. Earlier versions keep accepting a disabled user's refresh token, so Paralog could not notice when access is revoked.
+- Paralog reachable at a fixed address, such as `https://journal.example.com`. Pocket ID sends you back to that exact address after sign-in.
+
+#### 1. Create the client in Pocket ID
+
+1. In Pocket ID, open **Administration → OIDC Clients** and add a client named `Paralog`.
+2. Under **Callback URLs**, add `https://journal.example.com/api/auth/oidc/callback`, using your own Paralog address. It must match `PARALOG_PUBLIC_URL` exactly, including `https` and any port.
+3. Save, then copy the **Client ID** and **Client secret**. The secret is shown only once. If you made the client a **Public Client** instead, there is no secret; Paralog then relies on PKCE alone.
+4. On the **General** tab, turn on **PKCE** and save. Paralog always sends a PKCE challenge.
+5. On the **Access** tab, under **Allowed User Groups**, choose a group that contains only you. This is optional, since Paralog admits a single user anyway, but it stops anyone else from being offered the client.
+
+#### 2. Configure Paralog
+
+Add these to the `.env` file beside `docker-compose.yml`. The Compose file already passes them to the container.
+
+```bash
+PARALOG_AUTH_SECRET=...                           # required; generate with: openssl rand -base64 32
+PARALOG_PUBLIC_URL=https://journal.example.com    # the address you open Paralog at
+PARALOG_OIDC_ISSUER=https://id.example.com        # your Pocket ID address
+PARALOG_OIDC_CLIENT_ID=...                        # from step 1
+PARALOG_OIDC_CLIENT_SECRET=...                    # from step 1; leave unset for a public client
+PARALOG_OIDC_SUBJECT=placeholder                  # your Pocket ID user ID; see step 3
+# PARALOG_OIDC_NAME=Pocket ID                     # optional sign-in button label
+# PARALOG_PASSWORD=...                            # optional fallback for when Pocket ID is down
+```
+
+Restart Paralog with `docker compose up -d`. The sign-in page now shows a **Sign in with Pocket ID** button. If it does not, open the sign-in page once and Paralog logs which settings are missing:
+
+```bash
+docker compose logs paralog | grep "Pocket ID sign-in is off"
+```
+
+#### 3. Tell Paralog which user is you
+
+`PARALOG_OIDC_SUBJECT` is your Pocket ID user ID: the token's `sub` claim, not your username or email. A user cannot change their own ID, so renaming the account or changing its email can never hand the journal to someone else.
+
+1. With `PARALOG_OIDC_SUBJECT=placeholder`, click **Sign in with Pocket ID** and sign in. Paralog answers "That account is not this journal's owner." and logs your ID:
+
+   ```bash
+   docker compose logs paralog | grep "journal's owner"
+   # {"level":"warn",...,"sub":"0b2a3c4d-…","msg":"Someone other than the journal's owner signed in to Pocket ID"}
+   ```
+
+2. Set `PARALOG_OIDC_SUBJECT` to that `sub` value, then run `docker compose up -d` again.
+3. Sign in with Pocket ID. You land back on the day you were viewing.
+
+Changing the issuer, client ID, or subject signs out every device.
+
+#### How access is checked
+
+Paralog checks each ID token's signature against Pocket ID's published keys. About once a day it also uses the refresh token from your last Pocket ID sign-in to ask whether you may still sign in. If Pocket ID refuses, because the user was disabled, removed from the client's allowed groups, or the client was deleted, Paralog signs out every device, including any signed in with the password. If Pocket ID cannot be reached, Paralog keeps you signed in and asks again an hour later.
+
+To sign in with Pocket ID only, leave `PARALOG_PASSWORD` unset. Keeping it set gives you a way in when Pocket ID is down, but it is also a second way in for anyone who guesses it.
+
+#### Troubleshooting
+
+| What you see | Likely cause |
+| --- | --- |
+| No **Sign in with Pocket ID** button | A setting is missing. Check the log line shown in step 2. |
+| Pocket ID reports an invalid callback URL | The callback URL in Pocket ID does not match `PARALOG_PUBLIC_URL` + `/api/auth/oidc/callback`. |
+| "That sign-in took too long or started in another browser." | You opened Paralog at a different address than `PARALOG_PUBLIC_URL`, such as a LAN IP instead of the domain. Sign-in must start at the address Pocket ID returns you to. Taking more than 10 minutes also causes this. |
+| "That account is not this journal's owner." | `PARALOG_OIDC_SUBJECT` does not match the user you signed in as. See step 3. |
+| "Single sign-on is unavailable right now." | Paralog could not reach `PARALOG_OIDC_ISSUER`. Check that the Paralog container can resolve and reach Pocket ID. |
+| "Single sign-on failed. Try again." | Usually a wrong client ID or secret. The log line "Pocket ID sign-in failed" gives the reason. |
+
+### Sessions
+
+Sessions last 30 days. Signing out ends the session on every device, and changing `PARALOG_PASSWORD`, `PARALOG_AUTH_SECRET`, or the Pocket ID issuer, client ID, or subject signs every device out. After 10 wrong passwords in 15 minutes, sign-in is refused, even with the right password, until the oldest attempt is 15 minutes old. Behind a reverse proxy the limit applies per client address, taken from the last `X-Forwarded-For` entry; exposed directly, all attempts share one limit.
 
 Pending database migrations run automatically before Paralog begins serving requests, including after a Docker image upgrade. Migration files are bundled into the production image while the database remains on the persistent `/data` volume. When changing the database schema during development, run `npm run db:generate` and commit the generated files under `drizzle/`; use `npm run db:check` to validate the migration history.
 

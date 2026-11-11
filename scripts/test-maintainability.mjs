@@ -24,6 +24,7 @@ import { entryFileDate, preferredEntryFile } from "../lib/entry-files.ts";
 import { clearLoginFailures, LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, loginClient, loginRetryAfter, recordLoginFailure } from "../lib/login-throttle.ts";
 import { writeFileAtomic } from "../lib/atomic-file.ts";
 import { issueSessionToken, SESSION_MAX_AGE_SECONDS, verifySessionToken } from "../lib/session-token.ts";
+import { newPending, oidcFingerprint, oidcSetupFromEnv, openPending, redirectUri, safeReturnTo, sealPending, secureCookies } from "../lib/oidc.ts";
 import { indexedJournalReferences } from "../lib/entry-journal-references.ts";
 
 test("attachment paths accept supported URLs and reject unsafe destinations", () => {
@@ -502,7 +503,7 @@ test("duplicate entry files resolve to the newest write, then the path, regardle
 });
 
 test("session tokens expire, and stop working when the password, secret, or generation changes", () => {
-  const keys = { secret: "secret", password: "password", generation: 3 };
+  const keys = { secret: "secret", credentials: "password", generation: 3 };
   const now = Date.UTC(2026, 9, 13);
   const token = issueSessionToken(keys, now);
   assert.equal(verifySessionToken(token, keys, now), true);
@@ -510,11 +511,45 @@ test("session tokens expire, and stop working when the password, secret, or gene
   assert.equal(verifySessionToken(token, keys, now + (SESSION_MAX_AGE_SECONDS + 1) * 1000), false);
   assert.equal(verifySessionToken(token, keys, now - 60 * 60 * 1000), false);
   assert.equal(verifySessionToken(token, { ...keys, generation: 4 }, now), false);
-  assert.equal(verifySessionToken(token, { ...keys, password: "changed" }, now), false);
+  assert.equal(verifySessionToken(token, { ...keys, credentials: "changed" }, now), false);
   assert.equal(verifySessionToken(token, { ...keys, secret: "changed" }, now), false);
   const [version, issuedAt, generation, signature] = token.split(".");
   assert.equal(verifySessionToken([version, Number(issuedAt) + 1, generation, signature].join("."), keys, now), false);
   for (const value of [undefined, "", "not-a-token", `${token}x`]) assert.equal(verifySessionToken(value, keys, now), false);
+});
+
+test("Pocket ID sign-in needs one owner and a public URL, and reports what is missing", () => {
+  assert.deepEqual(oidcSetupFromEnv({}), { config: null, missing: [] });
+  assert.deepEqual(oidcSetupFromEnv({ PARALOG_PUBLIC_URL: "https://journal.example.com" }), { config: null, missing: [] });
+  const env = { PARALOG_OIDC_ISSUER: "https://id.example.com/", PARALOG_OIDC_CLIENT_ID: "paralog" };
+  assert.deepEqual(oidcSetupFromEnv(env).missing, ["PARALOG_OIDC_SUBJECT", "PARALOG_PUBLIC_URL"]);
+  assert.deepEqual(oidcSetupFromEnv({ ...env, PARALOG_OIDC_SUBJECT: "u", PARALOG_PUBLIC_URL: "journal.example.com" }).missing, ["PARALOG_PUBLIC_URL (an http(s) URL)"]);
+  const { config } = oidcSetupFromEnv({ ...env, PARALOG_OIDC_SUBJECT: " user-id-1 ", PARALOG_PUBLIC_URL: "https://journal.example.com/some/path" });
+  assert.equal(config.issuer, "https://id.example.com");
+  assert.equal(config.subject, "user-id-1");
+  assert.equal(config.name, "Pocket ID");
+  assert.equal(redirectUri(config), "https://journal.example.com/api/auth/oidc/callback");
+  assert.equal(secureCookies(config), true);
+  assert.equal(secureCookies({ ...config, publicOrigin: "http://localhost:3000" }), false);
+  assert.notEqual(oidcFingerprint(config), oidcFingerprint({ ...config, subject: "user-id-2" }));
+  assert.equal(oidcFingerprint(config), oidcFingerprint({ ...config, name: "Other label" }));
+});
+
+test("Pocket ID sign-in state is tamper-proof, short-lived, and returns only to this site", () => {
+  const now = Date.UTC(2026, 10, 11);
+  const pending = newPending("/?date=2026-11-11", now);
+  assert.equal(pending.returnTo, "/?date=2026-11-11");
+  const sealed = sealPending(pending, "secret");
+  assert.deepEqual(openPending(sealed, "secret", now), pending);
+  assert.equal(openPending(sealed, "other", now), null);
+  assert.equal(openPending(sealed, "secret", now + 11 * 60 * 1000), null);
+  const [payload, signature] = sealed.split(".");
+  const forged = Buffer.from(JSON.stringify({ ...pending, returnTo: "//evil.example" })).toString("base64url");
+  assert.equal(openPending(`${forged}.${signature}`, "secret", now), null);
+  assert.equal(openPending(`${payload}.${signature}.x`, "secret", now), null);
+  assert.equal(openPending(undefined, "secret", now), null);
+  for (const value of ["//evil.example", "/\\evil.example", "https://evil.example", "javascript:alert(1)", "", null]) assert.equal(safeReturnTo(value), "/");
+  assert.equal(safeReturnTo("/tags/work?x=1"), "/tags/work?x=1");
 });
 
 test("entry files are dated Markdown files that are not hidden", () => {

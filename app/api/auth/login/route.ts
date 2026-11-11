@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { passwordConfigured, passwordMatches, signIn } from "@/lib/auth";
+import { requestIsSecure } from "@/lib/request-origin";
 import { clearLoginFailures, loginClient, loginRetryAfter, recordLoginFailure, type LoginThrottle } from "@/lib/login-throttle";
 export const runtime = "nodejs";
 
@@ -21,8 +22,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
   }
   clearLoginFailures(throttle, client);
-  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0].trim();
-  const secure = forwardedProtocol ? forwardedProtocol === "https" : request.nextUrl.protocol === "https:";
-  await signIn(secure);
+  await signIn(requestIsSecure(request));
   return NextResponse.json({ ok: true });
 }

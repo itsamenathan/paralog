@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Login from "@/components/login";
-import { isAuthenticated, passwordConfigured } from "@/lib/auth";
+import { isAuthenticated, loginOptions } from "@/lib/auth";
 import { entriesMentioning } from "@/lib/journal";
 
 const displayDate = (value: string) => {
@@ -9,7 +9,7 @@ const displayDate = (value: string) => {
 };
 
 export default async function PersonPage({ params }: { params: Promise<{ person: string }> }) {
-  if (!await isAuthenticated()) return <Login configured={passwordConfigured()} />;
+  if (!await isAuthenticated()) return <Login {...loginOptions()} />;
   const encodedPerson = (await params).person;
   let decodedPerson = encodedPerson;
   try { decodedPerson = decodeURIComponent(encodedPerson); } catch { /* Treat malformed escapes as a literal name. */ }

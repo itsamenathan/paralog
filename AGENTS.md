@@ -14,7 +14,7 @@ Paralog is a single-user, self-hosted Next.js journal. The app uses the App Rout
 - Saving is debounced/automatic after typing pauses, with a manual Save action still available and visible save feedback.
 - Allow attaching photos and arbitrary documents. Store uploads below the persistent data directory and insert usable Markdown image/link syntax into the entry.
 - Markdown files placed directly into the data directory using the date-bearing filename convention must appear in the calendar and history automatically.
-- Protect the single-user app with password authentication. Credentials are supplied through environment variables and journal/content APIs must not be usable while unauthenticated.
+- Protect the single-user app with password authentication, Pocket ID (OpenID Connect) sign-in, or both. Credentials are supplied through environment variables and journal/content APIs must not be usable while unauthenticated.
 - Provide settings for changing the future save path format and defining a global Markdown template for new entries. A template should be easy to apply to a new entry without overwriting existing content.
 - Date selection must update browser history (`?date=YYYY-MM-DD`), and browser Back/Forward must restore the corresponding day, month, and entry.
 - Include a user-selectable dark theme based on Dracula and a light theme based on Alucard. Keep editor controls, dropdowns, focus states, and menus on the active palette.
@@ -80,7 +80,7 @@ agent-browser close
 - Preserve the configurable save-format tokens in `lib/journal.ts` (`YYYY`, `YY`, `MM`, `M`, `MMMM`, `MMM`, `DD`, `D`, `dddd`, `ddd`).
 - Manually added Markdown files must be discoverable when their filename contains a `YYYY-MM-DD` date. Do not require a database migration/import step for them to appear.
 - Keep path traversal protections for configurable paths and file-serving routes.
-- Use `PARALOG_PASSWORD` and `PARALOG_AUTH_SECRET` for authentication configuration; do not hard-code credentials.
+- Use `PARALOG_PASSWORD`, `PARALOG_AUTH_SECRET`, and the `PARALOG_OIDC_*` variables (Pocket ID/OpenID Connect sign-in) for authentication configuration; do not hard-code credentials. Pocket ID sign-in admits exactly one provider user ID (`PARALOG_OIDC_SUBJECT`), never a list: Paralog has one owner, not accounts.
 
 ## Observability
 

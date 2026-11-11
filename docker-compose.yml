@@ -5,8 +5,14 @@ services:
       - "3000:3000"
     environment:
       PARALOG_DATA_DIR: /data
-      PARALOG_PASSWORD: ${PARALOG_PASSWORD:?Set PARALOG_PASSWORD in your environment or .env file}
+      PARALOG_PASSWORD: ${PARALOG_PASSWORD:-}
       PARALOG_AUTH_SECRET: ${PARALOG_AUTH_SECRET:?Set PARALOG_AUTH_SECRET to a long random value, e.g. openssl rand -base64 32}
+      PARALOG_OIDC_ISSUER: ${PARALOG_OIDC_ISSUER:-}
+      PARALOG_OIDC_CLIENT_ID: ${PARALOG_OIDC_CLIENT_ID:-}
+      PARALOG_OIDC_CLIENT_SECRET: ${PARALOG_OIDC_CLIENT_SECRET:-}
+      PARALOG_OIDC_SUBJECT: ${PARALOG_OIDC_SUBJECT:-}
+      PARALOG_OIDC_NAME: ${PARALOG_OIDC_NAME:-}
+      PARALOG_PUBLIC_URL: ${PARALOG_PUBLIC_URL:-}
       PARALOG_VAPID_SUBJECT: ${PARALOG_VAPID_SUBJECT:-mailto:paralog@localhost}
       PARALOG_GEOCODING_URL: ${PARALOG_GEOCODING_URL:-https://nominatim.openstreetmap.org/reverse}
       PARALOG_GEOCODING_USER_AGENT: ${PARALOG_GEOCODING_USER_AGENT:-Paralog/0.1 (+https://github.com/itsamenathan/paralog)}
