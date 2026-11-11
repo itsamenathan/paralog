@@ -114,3 +114,61 @@ export async function photoPreview(id: string, size: ImmichImageSize = 'preview'
   if (!contentType.startsWith('image/')) return null;
   return { bytes: await response.arrayBuffer(), contentType };
 }
+
+export type ImmichYearPhotos = {
+  date: string;
+  total: number;
+  photos: ImmichPhoto[];
+};
+
+const ON_THIS_DAY_CONCURRENCY = 4;
+const ON_THIS_DAY_CACHE_MS = 10 * 60_000;
+const onThisDayCache = new Map<string, { expires: number; result: Promise<{ years: ImmichYearPhotos[]; total: number }> }>();
+
+type ImmichTimeBucket = { timeBucket?: string; count?: number };
+
+// Years before `year` that hold photos in `month` (`MM`), read from the month
+// buckets Immich builds for its timeline. Needs the `timeline.read` permission.
+async function yearsWithPhotosInMonth(month: string, year: number) {
+  const response = await request('/timeline/buckets');
+  if (!response.ok) throw new Error(`Immich timeline failed with status ${response.status}.`);
+  const buckets = await response.json() as ImmichTimeBucket[];
+  const years = new Set<number>();
+  for (const bucket of Array.isArray(buckets) ? buckets : []) {
+    const match = /^(\d{4})-(\d{2})/.exec(bucket.timeBucket || '');
+    if (!match || match[2] !== month || !bucket.count) continue;
+    if (Number(match[1]) < year) years.add(Number(match[1]));
+  }
+  return [...years];
+}
+
+async function loadPhotosOnThisDay(date: string) {
+  const [yearText, month, day] = date.split('-');
+  const year = Number(yearText);
+  const candidates = await yearsWithPhotosInMonth(month, year);
+  // February 29 only exists in leap years; shiftDate rejects it elsewhere.
+  const dates = candidates
+    .sort((left, right) => right - left)
+    .map((candidate) => `${String(candidate).padStart(4, '0')}-${month}-${day}`)
+    .filter((candidate) => shiftDate(candidate, 0) === candidate);
+
+  const years: ImmichYearPhotos[] = [];
+  for (let index = 0; index < dates.length; index += ON_THIS_DAY_CONCURRENCY) {
+    const batch = dates.slice(index, index + ON_THIS_DAY_CONCURRENCY);
+    const results = await Promise.all(batch.map(async (candidate) => ({ date: candidate, ...await photosForDate(candidate) })));
+    years.push(...results.filter((result) => result.photos.length > 0));
+  }
+  return { years, total: years.reduce((sum, item) => sum + item.total, 0) };
+}
+
+export function photosOnThisDay(date: string) {
+  if (!DATE_PATTERN.test(date) || shiftDate(date, 0) !== date) throw new Error('A valid date is required.');
+  const now = Date.now();
+  for (const [key, cached] of onThisDayCache) if (cached.expires <= now) onThisDayCache.delete(key);
+  const cached = onThisDayCache.get(date);
+  if (cached) return cached.result;
+  const result = loadPhotosOnThisDay(date);
+  onThisDayCache.set(date, { expires: now + ON_THIS_DAY_CACHE_MS, result });
+  result.catch(() => onThisDayCache.delete(date));
+  return result;
+}

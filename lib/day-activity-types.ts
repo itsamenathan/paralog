@@ -35,3 +35,9 @@ export type DaySummaryActivity = {
 export type DayActivity = DayPhotoActivity | DaySummaryActivity;
 
 export type DayProviderContext = { utcOffsetMinutes: number; nextUtcOffsetMinutes: number };
+
+export type PastDayPhotos = {
+  date: string;
+  total: number;
+  photos: DayPhoto[];
+};

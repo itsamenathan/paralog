@@ -219,6 +219,13 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 .photo-card:hover img { border-color: var(--line-strong); transform: scale(1.015); }
 .photo-card:focus-visible { outline-offset: 3px; }
 .photo-shelf + .memory-shelf { margin-top: 12px; }
+.widget-on-this-day .photo-card { position: relative; }
+.photo-card-year { position: absolute; left: 6px; bottom: 6px; padding: 2px 6px; border-radius: 6px; background: color-mix(in srgb, var(--surface) 86%, transparent); color: var(--ink); font: 700 10px ui-monospace, SFMono-Regular, Menlo, monospace; pointer-events: none; }
+.photo-years { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.photo-years button { padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); color: var(--muted); font-size: 10px; }
+.photo-years button b { color: var(--accent); }
+.photo-years button:hover { border-color: var(--line-strong); background: var(--accent-soft); color: var(--ink); }
+.photo-shelf + .photo-shelf { margin-top: 12px; }
 
 .activity-shelf { margin: 24px 0 0; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
 .activity-shelf-mobile { display: none; }
@@ -726,7 +733,7 @@ button.heatmap-cell:hover { box-shadow: inset 0 0 0 1px var(--ink); }
   .entry-context-column { gap: 0; padding-top: 0; }
   .entry-context-column .activity-shelf, .entry-context-column .photo-shelf, .entry-context-column .memory-shelf { margin-top: 24px; padding: 18px; }
   .entry-context-column .activity-shelf + .photo-shelf, .entry-context-column .activity-shelf + .memory-shelf { margin-top: 12px; }
-  .entry-context-column .photo-shelf + .memory-shelf { margin-top: 12px; }
+  .entry-context-column .photo-shelf + .memory-shelf, .entry-context-column .photo-shelf + .photo-shelf { margin-top: 12px; }
   .entry-context-column .photo-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .entry-context-column .photo-grid img { height: clamp(88px, 9vw, 118px); }
   .entry-context-column .memory-card { grid-template-columns: 130px minmax(0, 1fr) 94px; gap: 16px; padding: 12px 4px; }
